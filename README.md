@@ -14,8 +14,8 @@ One codebase runs on **iPhone, iPad, and the web**.
 | 0 | Project setup, database schema | ✅ Done |
 | 1 | Money engine (splitting math) | ✅ Done |
 | 2 | Sign in with Google, trips, members, guests | ✅ Done |
-| 3 | Add bills by hand, ledger, Settle Up | Next |
-| 4 | Real-time sync between phones | |
+| 3 | Add bills by hand, ledger, Settle Up | ✅ Done |
+| 4 | Real-time sync between phones | Next |
 | 5 | Receipt scanner | |
 | 6 | Itinerary planner and pinning bills | |
 | 7 | Budget dashboard | |

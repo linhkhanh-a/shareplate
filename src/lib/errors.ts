@@ -28,6 +28,17 @@ export function friendlyError(error: unknown): string {
     return `${history[1]} is on bills or payments, so they can leave the trip but can't be deleted.`;
   }
 
+  if (message.includes('STALE_BILL')) {
+    return "Someone else changed this bill while you were editing it. Your changes weren't saved. Go back and open it again to see the latest version.";
+  }
+  if (message.includes('BILL_NOT_FOUND')) return 'This bill was deleted.';
+  if (message.includes('ITEMIZED_BILL')) return 'Scanned bills are edited from the receipt screen.';
+  if (message.includes('SHARES_NOT_TOTAL') || message.includes('EXACT_MISMATCH')) {
+    return "Everyone's shares need to add up to the bill total.";
+  }
+  if (message.includes('PERCENT_NOT_100')) return 'Percentages need to add up to 100%.';
+  if (message.includes('NO_PARTICIPANTS')) return 'Choose who is splitting this bill.';
+  if (message.includes('BAD_AMOUNT')) return 'The bill needs an amount above $0.00.';
   if (message.includes('LAST_ADMIN')) {
     return 'A trip always needs an admin. Make someone else an admin first.';
   }

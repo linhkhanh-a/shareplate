@@ -27,11 +27,13 @@ link once hosting is set up, and a "try this" checklist.
 - [x] Privacy page (needed to publish the Google sign-in)
 - [ ] Sign in with Google on the iPhone app (code is in; tested with the iOS launch)
 
-## Phase 3: Bills, ledger, Settle Up
-- [ ] Add a bill by hand with any split mode
-- [ ] Ledger of all bills
-- [ ] Live balances and the Settle Up screen with Zelle info
-- [ ] Record payments
+## Phase 3: Bills, ledger, Settle Up ✅
+- [x] Add and edit a bill by hand: equal, percent or exact, with a live preview of each share
+- [x] Bill history on the trip screen, with your share of each bill
+- [x] Your balance at a glance; full balances on Settle Up
+- [x] Settle Up: fewest payments, with the recipient's Zelle info to copy
+- [x] Record payments and undo them
+- [x] Catch two people saving the same bill at once
 
 ## Phase 4: Real-time
 - [ ] Live updates across phones (Supabase Realtime)

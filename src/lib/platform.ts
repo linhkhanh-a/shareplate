@@ -28,3 +28,13 @@ export async function shareLink(message: string, url: string): Promise<'shared' 
   await Share.share({ message: `${message} ${url}`, url });
   return 'shared';
 }
+
+/** Copies text on the web; opens the share sheet on phones (where it can be copied). */
+export async function copyText(text: string): Promise<'copied' | 'shared'> {
+  if (Platform.OS === 'web') {
+    await navigator.clipboard.writeText(text);
+    return 'copied';
+  }
+  await Share.share({ message: text });
+  return 'shared';
+}

@@ -48,9 +48,11 @@ type ButtonProps = Omit<PressableProps, 'children' | 'style'> & {
   variant?: 'primary' | 'secondary' | 'quiet' | 'danger';
   loading?: boolean;
   style?: ViewStyle;
+  /** Overrides the label color, for buttons on colored backgrounds. */
+  textColor?: string;
 };
 
-export function Button({ label, variant = 'primary', loading, disabled, style, ...rest }: ButtonProps) {
+export function Button({ label, variant = 'primary', loading, disabled, style, textColor, ...rest }: ButtonProps) {
   const theme = useTheme();
   const isDisabled = disabled || loading;
   const palette = {
@@ -77,9 +79,9 @@ export function Button({ label, variant = 'primary', loading, disabled, style, .
       ]}
       {...rest}>
       {loading ? (
-        <ActivityIndicator color={palette.fg} />
+        <ActivityIndicator color={textColor ?? palette.fg} />
       ) : (
-        <ThemedText type="strong" style={{ color: palette.fg }}>
+        <ThemedText type="strong" style={{ color: textColor ?? palette.fg }}>
           {label}
         </ThemedText>
       )}
@@ -235,4 +237,122 @@ const styles = StyleSheet.create({
   },
   avatar: { alignItems: 'center', justifyContent: 'center' },
   loading: { padding: Spacing.five, alignItems: 'center' },
+});
+
+/** A small selectable option, used for "Paid by" and categories. */
+export function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityState={{ checked: selected }}
+      onPress={onPress}
+      style={({ pressed }) => [
+        chipStyles.chip,
+        {
+          backgroundColor: selected ? theme.primary : pressed ? theme.surfaceMuted : theme.surface,
+          borderColor: selected ? theme.primary : theme.border,
+        },
+      ]}>
+      <ThemedText type="small" style={{ color: selected ? theme.onPrimary : theme.text, fontFamily: Fonts.medium }}>
+        {label}
+      </ThemedText>
+    </Pressable>
+  );
+}
+
+export function ChipGroup({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <View style={chipStyles.group}>
+      <ThemedText type="strong">{label}</ThemedText>
+      <View accessibilityRole="radiogroup" accessibilityLabel={label} style={chipStyles.wrap}>
+        {children}
+      </View>
+    </View>
+  );
+}
+
+/** Two to four options side by side, one selected. */
+export function Segmented<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  const theme = useTheme();
+  return (
+    <View
+      accessibilityRole="radiogroup"
+      accessibilityLabel={label}
+      style={[chipStyles.segmented, { backgroundColor: theme.surfaceMuted }]}>
+      {options.map((o) => {
+        const selected = o.value === value;
+        return (
+          <Pressable
+            key={o.value}
+            accessibilityRole="radio"
+            accessibilityState={{ checked: selected }}
+            onPress={() => onChange(o.value)}
+            style={[chipStyles.segment, selected && { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <ThemedText
+              type="small"
+              style={{ fontFamily: selected ? Fonts.semibold : Fonts.medium, color: selected ? theme.text : theme.textSecondary }}>
+              {o.label}
+            </ThemedText>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+export function Checkbox({ checked, label }: { checked: boolean; label: string }) {
+  const theme = useTheme();
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      aria-label={label}
+      style={[
+        chipStyles.checkbox,
+        { borderColor: checked ? theme.primary : theme.border, backgroundColor: checked ? theme.primary : theme.surface },
+      ]}>
+      {checked ? <ThemedText style={{ color: theme.onPrimary, fontFamily: Fonts.bold, lineHeight: 18 }}>✓</ThemedText> : null}
+    </View>
+  );
+}
+
+const chipStyles = StyleSheet.create({
+  group: { gap: Spacing.two },
+  wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
+  chip: {
+    minHeight: 36,
+    paddingHorizontal: Spacing.three,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    justifyContent: 'center',
+  },
+  segmented: { flexDirection: 'row', borderRadius: Radius.medium, padding: Spacing.one, gap: Spacing.one },
+  segment: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: Radius.small + 2,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

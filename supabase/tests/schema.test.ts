@@ -410,3 +410,100 @@ describe('invite links, joining and leaving', () => {
     expect(r.rows[0].display_name).toBe('An Nguyen');
   });
 });
+
+describe('saving bills', () => {
+  async function save(userId: string, bill: Record<string, unknown>) {
+    return asUser(userId, async (tx) => {
+      const r = await tx.query<{ id: string }>(`select save_bill($1::jsonb) as id`, [JSON.stringify(bill)]);
+      return r.rows[0].id;
+    });
+  }
+
+  it('saves a bill and everyone’s shares together, and balances follow', async () => {
+    const { groupId, linhId, anId, guestId } = await createTrip();
+    await save(AN, {
+      group_id: groupId,
+      paid_by_member_id: anId,
+      title: 'Hotpot',
+      category: 'Food',
+      split_mode: 'equal',
+      total_cents: 1000,
+      participants: [
+        { member_id: linhId, amount_cents: 334 },
+        { member_id: anId, amount_cents: 333 },
+        { member_id: guestId, amount_cents: 333 },
+      ],
+    });
+    expect(await balances(LINH, groupId)).toEqual({ An: 667, Linh: -334, 'Minh (guest)': -333 });
+  });
+
+  it('edits a bill by replacing its shares, and catches stale edits', async () => {
+    const { groupId, linhId, anId } = await createTrip();
+    const base = {
+      group_id: groupId,
+      paid_by_member_id: linhId,
+      title: 'Taxi',
+      split_mode: 'percent',
+      total_cents: 2000,
+      participants: [
+        { member_id: linhId, share_input: 5000, amount_cents: 1000 },
+        { member_id: anId, share_input: 5000, amount_cents: 1000 },
+      ],
+    };
+    const id = await save(LINH, base);
+    await save(AN, {
+      ...base,
+      id,
+      expected_version: 1,
+      split_mode: 'exact',
+      participants: [
+        { member_id: linhId, share_input: 500, amount_cents: 500 },
+        { member_id: anId, share_input: 1500, amount_cents: 1500 },
+      ],
+    });
+    expect(await balances(LINH, groupId)).toMatchObject({ An: -1500, Linh: 1500 });
+
+    // Linh still has version 1 open and tries to save over An's change.
+    await expect(save(LINH, { ...base, id, expected_version: 1 })).rejects.toThrow(/STALE_BILL/);
+  });
+
+  it('refuses shares that do not add up, and leaves nothing half-saved', async () => {
+    const { groupId, linhId, anId } = await createTrip();
+    await expect(
+      save(LINH, {
+        group_id: groupId,
+        paid_by_member_id: linhId,
+        split_mode: 'exact',
+        total_cents: 1000,
+        participants: [
+          { member_id: linhId, share_input: 500, amount_cents: 500 },
+          { member_id: anId, share_input: 400, amount_cents: 400 },
+        ],
+      }),
+    ).rejects.toThrow(/SHARES_NOT_TOTAL/);
+    const left = await db.query<{ n: string }>(`select count(*) as n from bills`);
+    expect(Number(left.rows[0].n)).toBe(0);
+  });
+
+  it('only lets trip members save bills', async () => {
+    const { groupId, linhId } = await createTrip();
+    await expect(
+      save(OUTSIDER, {
+        group_id: groupId,
+        paid_by_member_id: linhId,
+        split_mode: 'equal',
+        total_cents: 500,
+        participants: [{ member_id: linhId, amount_cents: 500 }],
+      }),
+    ).rejects.toThrow(/row-level security|violates/);
+  });
+
+  it('rejects empty or zero bills with a clear reason', async () => {
+    const { groupId, linhId } = await createTrip();
+    const bill = { group_id: groupId, paid_by_member_id: linhId, split_mode: 'equal', participants: [] };
+    await expect(save(LINH, { ...bill, total_cents: 500 })).rejects.toThrow(/NO_PARTICIPANTS/);
+    await expect(
+      save(LINH, { ...bill, total_cents: 0, participants: [{ member_id: linhId, amount_cents: 0 }] }),
+    ).rejects.toThrow(/BAD_AMOUNT/);
+  });
+});
