@@ -102,3 +102,32 @@ sent to every visitor's browser anyway, and row level security is what protects
 the data. The database password and access token exist only as GitHub Actions
 secrets, used by the deploy workflow.
 
+## 17. The website is a single-page app
+
+Every screen is drawn in the browser rather than pre-built as HTML. Almost every
+screen needs a signed-in user, so pre-building pages bought nothing and caused
+mismatches between the pre-built page and the signed-in one. `vercel.json`
+sends every address to the app, which then shows the right screen.
+
+## 18. Guests are allowed in both kinds of trips
+
+"Everyone signs in" trips lead with the invite link, but an admin can still add
+a guest for someone without a phone or account. "Quick split" trips lead with
+guests and have no invite link.
+
+## 19. Removing someone is a soft remove
+
+Removing a person or leaving a trip sets `left_at` instead of deleting the
+row, so bills they were on keep pointing at a real person. The database refuses
+to hard-delete anyone who appears on a bill or payment, and a whole trip can
+still be deleted cleanly (bills and payments go with it).
+
+## 20. Trip mates see each other's name and Zelle info, not email
+
+That matches the privacy page. Emails stay private between a person and the app.
+
+## 21. Invite links are one per trip and last 30 days
+
+Admins can reset the link, which stops the old one working. Rejoining after
+leaving restores the same membership, so past bills stay attached.
+

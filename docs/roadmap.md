@@ -9,7 +9,7 @@ link once hosting is set up, and a "try this" checklist.
 - [x] Schema tests in an in-memory Postgres
 - [x] CI: typecheck, lint, tests, web build on every pull request
 - [x] Connect the Supabase project; migrations deploy automatically when merged to main
-- [ ] Connect Vercel for preview links (needs Linh's account)
+- [x] Connect Vercel: live site plus a preview link for every pull request
 
 ## Phase 1: Money engine ✅
 - [x] Whole-cent amounts, parsing and formatting
@@ -19,10 +19,13 @@ link once hosting is set up, and a "try this" checklist.
 - [x] Balances and debt simplification
 - [x] Unit and property-based tests
 
-## Phase 2: Sign-in and trips
-- [ ] Google sign-in (Supabase Auth), profile setup with Zelle
-- [ ] Create a trip, invite by link, add guests
-- [ ] Admin and member roles
+## Phase 2: Sign-in and trips ✅
+- [x] Google sign-in (Supabase Auth), first-time profile setup with Zelle
+- [x] Create a trip (everyone signs in, or quick split with guests)
+- [x] Invite by link, join, leave, rejoin; add guests
+- [x] Admin and member roles; rename and delete trips
+- [x] Privacy page (needed to publish the Google sign-in)
+- [ ] Sign in with Google on the iPhone app (code is in; tested with the iOS launch)
 
 ## Phase 3: Bills, ledger, Settle Up
 - [ ] Add a bill by hand with any split mode
