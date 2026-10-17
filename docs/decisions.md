@@ -131,3 +131,28 @@ That matches the privacy page. Emails stay private between a person and the app.
 Admins can reset the link, which stops the old one working. Rejoining after
 leaving restores the same membership, so past bills stay attached.
 
+## 22. A bill and its shares are saved in one step
+
+The `save_bill` database function writes the bill and everyone's shares in a
+single transaction, so a half-saved bill can't exist. It runs with the
+person's own permissions, so trip privacy rules still apply.
+
+## 23. Two people editing the same bill
+
+Every save sends the version of the bill the person started editing. If
+someone else saved in between, the database refuses with "someone else changed
+this bill" instead of silently overwriting their change.
+
+## 24. Balances are calculated in the app with the money engine
+
+The trip screen and Settle Up calculate balances from the bills and payments
+using the same tested code as `docs/money-engine.md`. The database has a
+matching `member_balances` view, which it uses to enforce the leave and
+delete-account rules.
+
+## 25. Dates are typed as year-month-day, with Today and Yesterday shortcuts
+
+Phones and browsers have very different date pickers. Most bills are added the
+same day or the next, so two shortcuts cover the common case. A proper
+calendar picker can come with the itinerary in Phase 6.
+
