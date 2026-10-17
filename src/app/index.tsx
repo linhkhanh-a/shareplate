@@ -1,62 +1,90 @@
-import { StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
-import { formatCents, splitEqual } from '@/money';
+import { Avatar, Button, Loading, Notice, Pill, Screen } from '@/components/ui';
+import { Radius, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { friendlyError } from '@/lib/errors';
+import { useProfile, useTrips, type TripSummary } from '@/lib/queries';
 
-// Placeholder home screen until Phase 3 builds the real app.
-// It runs one real split through the money engine as a smoke test.
-const demo = splitEqual(1000, ['Linh', 'An', 'Minh']);
+export default function TripsScreen() {
+  const profile = useProfile();
+  const trips = useTrips();
+  const name = profile.data?.full_name || profile.data?.email || '';
 
-export default function HomeScreen() {
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedText type="title" style={styles.center}>
-          Shareplate
+    <Screen footer={<Button label="New trip" onPress={() => router.push('/trips/new')} />}>
+      <View style={styles.header}>
+        <ThemedText type="title" accessibilityRole="header">
+          Your trips
         </ThemedText>
-        <ThemedText style={styles.center} themeColor="textSecondary">
-          Split trip bills fairly, down to the last cent.
-        </ThemedText>
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel="Your profile"
+          hitSlop={8}
+          onPress={() => router.push('/profile')}>
+          <Avatar name={name} size={40} />
+        </Pressable>
+      </View>
 
-        <ThemedView type="backgroundElement" style={styles.card}>
-          <ThemedText type="smallBold">$10.00 split three ways</ThemedText>
-          {demo.map((s) => (
-            <ThemedText key={s.memberId} type="small">
-              {s.memberId}: {formatCents(s.amountCents)}
-            </ThemedText>
-          ))}
-        </ThemedView>
+      {trips.isPending ? <Loading /> : null}
+      {trips.isError ? <Notice tone="error">{friendlyError(trips.error)}</Notice> : null}
 
-        <ThemedText type="small" themeColor="textSecondary" style={styles.center}>
-          Under construction. The full app arrives phase by phase.
+      {trips.data && trips.data.length === 0 ? (
+        <Notice>
+          <ThemedText type="strong">No trips yet</ThemedText>
+          <ThemedText type="small">
+            Create one for your next getaway, or open an invite link a friend sent you.
+          </ThemedText>
+        </Notice>
+      ) : null}
+
+      <View style={styles.list}>
+        {trips.data?.map((t) => <TripRow key={t.trip.id} summary={t} />)}
+      </View>
+    </Screen>
+  );
+}
+
+function TripRow({ summary }: { summary: TripSummary }) {
+  const theme = useTheme();
+  const { trip, role } = summary;
+  return (
+    <Pressable
+      accessibilityRole="link"
+      onPress={() => router.push({ pathname: '/trips/[id]', params: { id: trip.id } })}
+      style={({ pressed }) => [
+        styles.row,
+        { backgroundColor: pressed ? theme.surfaceMuted : theme.surface, borderColor: theme.border },
+      ]}>
+      <View style={[styles.stripe, { backgroundColor: trip.mode === 'quick' ? theme.accent : theme.primary }]} />
+      <View style={styles.rowText}>
+        <ThemedText type="strong" numberOfLines={1}>
+          {trip.name}
         </ThemedText>
-      </SafeAreaView>
-    </ThemedView>
+        <ThemedText type="small" themeColor="textSecondary">
+          {trip.mode === 'quick' ? 'Quick split with guests' : 'Everyone signs in'}
+        </ThemedText>
+      </View>
+      {role === 'admin' ? <Pill label="Admin" /> : null}
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  list: { gap: Spacing.two },
+  row: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    alignItems: 'center',
+    gap: Spacing.three,
+    paddingVertical: Spacing.three,
+    paddingRight: Spacing.three,
+    borderWidth: 1,
+    borderRadius: Radius.medium,
+    overflow: 'hidden',
   },
-  safeArea: {
-    flex: 1,
-    maxWidth: MaxContentWidth,
-    paddingHorizontal: Spacing.four,
-    justifyContent: 'center',
-    gap: Spacing.four,
-  },
-  center: {
-    textAlign: 'center',
-  },
-  card: {
-    gap: Spacing.two,
-    padding: Spacing.four,
-    borderRadius: Spacing.four,
-  },
+  stripe: { width: 6, alignSelf: 'stretch', marginVertical: -Spacing.three },
+  rowText: { flex: 1, gap: Spacing.half },
 });

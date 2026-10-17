@@ -1,55 +1,55 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://unistyl.es/), etc.
+ * Shareplate design tokens.
+ *
+ * Palette: Ha Long jade for primary actions, Hoi An lantern saffron as the one
+ * accent, on a cool white (not cream). Type: Be Vietnam Pro, a typeface made by
+ * Vietnamese designers, so names like "Hà Nội" or "Nguyễn" render properly.
+ * Money always uses tabular figures so columns of amounts line up.
  */
 
 import '@/global.css';
 
-import { Platform } from 'react-native';
-
 export const Colors = {
   light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
+    background: '#F7F9F8',
+    surface: '#FFFFFF',
+    surfaceMuted: '#E8EFEC',
+    border: '#D3DEDA',
+    text: '#17221E',
+    textSecondary: '#55665F',
+    primary: '#1F6F5C',
+    primaryPressed: '#185A4A',
+    onPrimary: '#FFFFFF',
+    accent: '#F2B134',
+    onAccent: '#2B1D00',
+    danger: '#B4402B',
+    focus: '#F2B134',
   },
   dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
+    background: '#0F1714',
+    surface: '#16221E',
+    surfaceMuted: '#1E2D28',
+    border: '#2A3B35',
+    text: '#E7F0EC',
+    textSecondary: '#9FB3AB',
+    primary: '#4FB89A',
+    primaryPressed: '#3E9E83',
+    onPrimary: '#06201A',
+    accent: '#F2B134',
+    onAccent: '#2B1D00',
+    danger: '#F08A74',
+    focus: '#F2B134',
   },
 } as const;
 
 export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
 
-export const Fonts = Platform.select({
-  ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
-  },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
-  },
-  web: {
-    sans: 'var(--font-display)',
-    serif: 'var(--font-serif)',
-    rounded: 'var(--font-rounded)',
-    mono: 'var(--font-mono)',
-  },
-});
+export const Fonts = {
+  regular: 'BeVietnamPro_400Regular',
+  medium: 'BeVietnamPro_500Medium',
+  semibold: 'BeVietnamPro_600SemiBold',
+  bold: 'BeVietnamPro_700Bold',
+} as const;
 
 export const Spacing = {
   half: 2,
@@ -61,5 +61,10 @@ export const Spacing = {
   six: 64,
 } as const;
 
-export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
-export const MaxContentWidth = 800;
+export const Radius = {
+  small: 8,
+  medium: 14,
+  pill: 999,
+} as const;
+
+export const MaxContentWidth = 560;

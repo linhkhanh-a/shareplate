@@ -294,3 +294,119 @@ describe('privileges', () => {
     ).rejects.toThrow(/permission denied/);
   });
 });
+
+describe('invite links, joining and leaving', () => {
+  const STRANGER_JOINS = async (token: string) =>
+    asUser(OUTSIDER, (tx) => tx.query<{ join_group: string }>(`select join_group($1)`, [token]));
+
+  it('lets an admin create one stable invite link and anyone signed in join with it', async () => {
+    const { groupId } = await createTrip();
+    const token = await asUser(LINH, async (tx) => {
+      const a = await tx.query<{ t: string }>(`select get_or_create_invite($1) as t`, [groupId]);
+      const b = await tx.query<{ t: string }>(`select get_or_create_invite($1) as t`, [groupId]);
+      expect(a.rows[0].t).toBe(b.rows[0].t);
+      expect(a.rows[0].t).toMatch(/^[0-9a-f]{32}$/);
+      return a.rows[0].t;
+    });
+
+    const preview = await asUser(OUTSIDER, (tx) =>
+      tx.query<{ group_name: string; member_count: string; invited_by: string; already_member: boolean }>(
+        `select group_name, member_count, invited_by, already_member from preview_invite($1)`,
+        [token],
+      ),
+    );
+    expect(preview.rows[0]).toMatchObject({ group_name: 'Da Lat trip', invited_by: 'Linh', already_member: false });
+    expect(Number(preview.rows[0].member_count)).toBe(3);
+
+    const joined = await STRANGER_JOINS(token);
+    expect(joined.rows[0].join_group).toBe(groupId);
+    const sees = await asUser(OUTSIDER, (tx) => tx.query(`select * from groups where id = $1`, [groupId]));
+    expect(sees.rows).toHaveLength(1);
+  });
+
+  it('stops regular members from making invite links', async () => {
+    const { groupId } = await createTrip();
+    await expect(
+      asUser(AN, (tx) => tx.query(`select get_or_create_invite($1)`, [groupId])),
+    ).rejects.toThrow(/NOT_ADMIN/);
+  });
+
+  it('refuses an old link after the admin resets it', async () => {
+    const { groupId } = await createTrip();
+    const [oldToken, newToken] = await asUser(LINH, async (tx) => {
+      const a = await tx.query<{ t: string }>(`select get_or_create_invite($1) as t`, [groupId]);
+      const b = await tx.query<{ t: string }>(`select reset_invite($1) as t`, [groupId]);
+      return [a.rows[0].t, b.rows[0].t];
+    });
+    expect(newToken).not.toBe(oldToken);
+    await expect(STRANGER_JOINS(oldToken)).rejects.toThrow(/INVITE_INVALID/);
+    await STRANGER_JOINS(newToken);
+  });
+
+  it('lets a settled member leave, and rejoin later as the same person', async () => {
+    const { groupId, anId } = await createTrip();
+    await asUser(AN, (tx) => tx.query(`select leave_group($1)`, [groupId]));
+    const gone = await asUser(AN, (tx) => tx.query(`select * from groups where id = $1`, [groupId]));
+    expect(gone.rows).toHaveLength(0);
+
+    const token = await asUser(LINH, async (tx) =>
+      (await tx.query<{ t: string }>(`select get_or_create_invite($1) as t`, [groupId])).rows[0].t,
+    );
+    const rejoined = await asUser(AN, async (tx) => {
+      await tx.query(`select join_group($1)`, [token]);
+      return tx.query<{ id: string }>(`select id from group_members where user_id = $1 and left_at is null`, [AN]);
+    });
+    expect(rejoined.rows[0].id).toBe(anId);
+  });
+
+  it('blocks leaving with money still owed, through the leave function too', async () => {
+    const { groupId, linhId, anId } = await createTrip();
+    await saveEqualBill(LINH, groupId, linhId, [
+      [linhId, 500],
+      [anId, 500],
+    ]);
+    await expect(asUser(AN, (tx) => tx.query(`select leave_group($1)`, [groupId]))).rejects.toThrow(
+      /UNSETTLED_BALANCE/,
+    );
+  });
+
+  it('deletes a whole trip, bills and all, when an admin deletes it', async () => {
+    const { groupId, linhId, anId } = await createTrip();
+    await saveEqualBill(LINH, groupId, linhId, [
+      [linhId, 500],
+      [anId, 500],
+    ]);
+    await asUser(LINH, (tx) => tx.query(`delete from groups where id = $1`, [groupId]));
+    const left = await db.query<{ n: string }>(`select count(*) as n from bills`);
+    expect(Number(left.rows[0].n)).toBe(0);
+  });
+
+  it('never hard-deletes someone who is on a bill; they can only leave', async () => {
+    const { groupId, linhId, guestId } = await createTrip();
+    await saveEqualBill(LINH, groupId, linhId, [
+      [linhId, 500],
+      [guestId, 500],
+    ]);
+    await expect(asUser(LINH, (tx) => tx.query(`delete from group_members where id = $1`, [guestId]))).rejects.toThrow(
+      /HAS_HISTORY/,
+    );
+  });
+
+  it('lets an admin delete a guest who was added by mistake', async () => {
+    const { guestId } = await createTrip();
+    const r = await asUser(LINH, (tx) => tx.query(`delete from group_members where id = $1`, [guestId]));
+    expect(r.affectedRows).toBe(1);
+  });
+
+  it('updates someone’s name in their trips when they rename themselves', async () => {
+    const { groupId } = await createTrip();
+    await asUser(AN, (tx) => tx.query(`update profiles set full_name = 'An Nguyen' where id = $1`, [AN]));
+    const r = await asUser(LINH, (tx) =>
+      tx.query<{ display_name: string }>(`select display_name from group_members where group_id = $1 and user_id = $2`, [
+        groupId,
+        AN,
+      ]),
+    );
+    expect(r.rows[0].display_name).toBe('An Nguyen');
+  });
+});
