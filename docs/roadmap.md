@@ -8,7 +8,7 @@ link once hosting is set up, and a "try this" checklist.
 - [x] Database schema with row-level security (`supabase/migrations`)
 - [x] Schema tests in an in-memory Postgres
 - [x] CI: typecheck, lint, tests, web build on every pull request
-- [ ] Connect a Supabase project (needs Linh's account)
+- [x] Connect the Supabase project; migrations deploy automatically when merged to main
 - [ ] Connect Vercel for preview links (needs Linh's account)
 
 ## Phase 1: Money engine ✅

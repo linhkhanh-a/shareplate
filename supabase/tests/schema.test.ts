@@ -26,11 +26,6 @@ async function freshDatabase() {
   for (const file of readdirSync(migrationsDir).sort()) {
     await pg.exec(readFileSync(join(migrationsDir, file), 'utf8'));
   }
-  // Supabase grants these by default.
-  await pg.exec(`
-    grant usage on schema public to anon, authenticated, service_role;
-    grant all on all tables in schema public to authenticated, service_role;
-  `);
   await pg.query(
     `insert into auth.users (id, email, raw_user_meta_data) values
       ($1, 'linh@example.com', '{"full_name":"Linh"}'),
@@ -39,6 +34,14 @@ async function freshDatabase() {
     [LINH, AN, OUTSIDER],
   );
   return pg;
+}
+
+/** Runs `fn` as a signed-out visitor. */
+async function asAnon<T>(fn: (tx: Transaction) => Promise<T>): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.exec('set local role anon');
+    return fn(tx);
+  });
 }
 
 /** Runs `fn` as a signed-in user, with row level security applied. */
@@ -271,5 +274,23 @@ describe('membership guards', () => {
     const { anId } = await createTrip();
     const r = await asUser(AN, (tx) => tx.query(`update group_members set role = 'admin' where id = $1`, [anId]));
     expect(r.affectedRows).toBe(0);
+  });
+});
+
+describe('privileges', () => {
+  it('gives signed-out visitors no access at all', async () => {
+    await createTrip();
+    await expect(asAnon((tx) => tx.query(`select * from groups`))).rejects.toThrow(/permission denied/);
+    await expect(asAnon((tx) => tx.query(`select * from profiles`))).rejects.toThrow(/permission denied/);
+  });
+
+  it('keeps internal money functions private', async () => {
+    const { linhId } = await createTrip();
+    await expect(
+      asUser(LINH, (tx) => tx.query(`select _member_balance_cents($1)`, [linhId])),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      asUser(LINH, (tx) => tx.query(`select check_bill_integrity($1)`, [linhId])),
+    ).rejects.toThrow(/permission denied/);
   });
 });

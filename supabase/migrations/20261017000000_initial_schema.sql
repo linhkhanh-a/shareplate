@@ -244,7 +244,6 @@ as $$
     - coalesce((select sum(amount_cents) from public.settlements where to_member_id = p_member_id), 0);
 $$;
 
-revoke execute on function public._member_balance_cents(uuid) from public;
 
 -- Balances for every member the viewer can see (row level security applies).
 create view public.member_balances
@@ -472,8 +471,6 @@ begin
 end;
 $$;
 
-revoke execute on function public.check_bill_integrity(uuid) from public;
-
 create function public.check_bill_integrity_trigger()
 returns trigger
 language plpgsql security definer set search_path = public
@@ -595,3 +592,17 @@ create policy "bill_participants: members all" on public.bill_participants
 create policy "settlements: members all" on public.settlements
   for all to authenticated
   using (public.is_group_member(group_id)) with check (public.is_group_member(group_id));
+
+-- ===========================================================================
+-- Privileges: set explicitly instead of relying on project defaults.
+-- Signed-out visitors (anon) get nothing; signed-in users (authenticated)
+-- get table access, filtered by the row level security policies above.
+-- ===========================================================================
+
+revoke all on all tables in schema public from anon;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+
+revoke execute on all functions in schema public from public, anon, authenticated;
+grant execute on function public.is_group_member(uuid) to authenticated;
+grant execute on function public.is_group_admin(uuid) to authenticated;
+grant execute on function public.shares_group_with(uuid) to authenticated;

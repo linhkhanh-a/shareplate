@@ -57,6 +57,14 @@ npm test           # run all tests
 npm run check      # typecheck + lint + tests (what CI runs)
 ```
 
+## Deploying
+
+- **Database:** new files in `supabase/migrations/` are applied to the live
+  Supabase project automatically when they're merged to `main`
+  (`.github/workflows/deploy-database.yml`).
+- **Website:** Vercel builds every pull request as a preview and `main` as the
+  live site.
+
 ## Author
 
 Built by Linh Bui.

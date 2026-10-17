@@ -86,3 +86,19 @@ Items, discount, tax and tip are each split with largest-remainder rounding.
 That keeps a per-person breakdown where every column matches the receipt and no
 line ever goes negative, at the cost of a person's total possibly being off from
 the unrounded math by a couple of cents.
+
+## 15. Database privileges are set explicitly
+
+Supabase projects can expose every new table to the API automatically. The
+migration doesn't rely on that: signed-out visitors get no table access at all,
+signed-in users get access filtered by row level security, and internal helper
+functions can't be called from the app. The schema tests start from Supabase's
+permissive defaults to prove the migration locks things down.
+
+## 16. Public keys are committed; secrets never are
+
+The Supabase project URL and publishable key live in `.env` in the repo. They're
+sent to every visitor's browser anyway, and row level security is what protects
+the data. The database password and access token exist only as GitHub Actions
+secrets, used by the deploy workflow.
+
