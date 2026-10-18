@@ -6,12 +6,23 @@ export { MoneyError, type MoneyErrorCode } from './errors';
 export {
   assertCents,
   assertNonNegativeCents,
+  currencySymbol,
   formatCents,
+  setCurrencySymbol,
   parseCents,
   sumCents,
   type Cents,
 } from './cents';
 export { allocate } from './allocate';
+export {
+  centsToText,
+  CURRENCIES,
+  currencySymbolFor,
+  normalizeMoneyText,
+  normalizePercentText,
+  parseMoneyText,
+  type CurrencyCode,
+} from './entry';
 export {
   FULL_PERCENT_BP,
   parsePercentToBasisPoints,

@@ -49,7 +49,7 @@ describe('scan wizard drafts', () => {
     const d = draftFromScan(scan, base);
     const before = checkDraft(d);
     expect(before.itemsOk).toBe(true);
-    expect(before.totals).toEqual({ subtotal: 3600, discount: 600, tax: 240, tip: 900, total: 4140 });
+    expect(before.totals).toEqual({ subtotal: 3600, discount: 600, tax: 240, tip: 900, total: 4140, rates: { discount: null, tax: null, tip: null } });
     expect(before.taxRate).toBe('8%');
     expect(before.mismatches).toEqual([]);
     expect(before.assignMessage).toBe('Choose who had "Pho" and "Banh mi" and 1 more.');
@@ -178,5 +178,56 @@ describe('scan wizard drafts', () => {
 
     // A total that's off for another reason isn't blamed on tax.
     expect(checkDraft({ ...d, tip: '1' }).taxLooksIncluded).toBe(false);
+  });
+});
+
+describe('discount, tax and tip as $ or %', () => {
+  const draft = (): ReceiptDraft => ({
+    ...emptyDraft({ payerId: 'linh', date: '2026-10-17' }),
+    items: [
+      { key: 'a', name: 'Pho', price: '15', memberIds: ['linh'] },
+      { key: 'b', name: 'Banh mi', price: '25', memberIds: ['an'] },
+    ],
+  });
+
+  it('works out percentages from the right base, rounded to the cent', () => {
+    // $40 of items, 10% off = $4; 8.875% tax on $36 = $3.195 -> $3.20; 18% tip on $36 = $6.48.
+    const d = { ...draft(), discount: '10', discountMode: 'percent' as const, tax: '8.875', taxMode: 'percent' as const, tip: '18', tipMode: 'percent' as const };
+    const c = checkDraft(d);
+    expect(c.totals).toMatchObject({ subtotal: 4000, discount: 400, tax: 320, tip: 648, total: 4568 });
+    expect(c.totals?.rates).toEqual({ discount: 1000, tax: 888, tip: 1800 });
+    const payload = itemizedPayload(d, c.result!, { tripId: 't' });
+    expect(payload).toMatchObject({ discount_cents: 400, tax_cents: 320, tip_cents: 648, discount_rate_bp: 1000, tax_rate_bp: 888, tip_rate_bp: 1800 });
+  });
+
+  it('mixes amounts and percentages, and refuses a discount over 100%', () => {
+    const c = checkDraft({ ...draft(), discount: '5', tax: '10%', taxMode: 'percent' });
+    expect(c.totals).toMatchObject({ discount: 500, tax: 350, total: 3850 });
+    expect(checkDraft({ ...draft(), discount: '120', discountMode: 'percent' }).totalsMessage).toBe('A discount can be at most 100%.');
+    expect(checkDraft({ ...draft(), tip: 'abc', tipMode: 'percent' }).totalsMessage).toMatch(/like 3.50 or 10%/);
+  });
+
+  it('reopens a saved bill showing the percentages that were typed', () => {
+    const d = draftFromBill({
+      title: 'Pho',
+      vendor: null,
+      category: 'Food',
+      bill_date: '2026-10-17',
+      paid_by_member_id: 'linh',
+      discount_cents: 400,
+      tax_cents: 320,
+      tip_cents: 500,
+      discount_rate_bp: 1000,
+      tax_rate_bp: 888,
+      tip_rate_bp: null,
+      bill_image_path: null,
+      items: [{ name: 'Pho', price_cents: 4000, member_ids: ['linh'] }],
+    });
+    expect(d).toMatchObject({ discount: '10', discountMode: 'percent', tax: '8.88', taxMode: 'percent', tip: '5.00', tipMode: 'amount' });
+  });
+
+  it('accepts prices with extra decimals, rounded to the cent', () => {
+    const c = checkDraft({ ...draft(), items: [{ key: 'a', name: 'Pho', price: '12.345', memberIds: ['linh'] }] });
+    expect(c.totals?.subtotal).toBe(1235);
   });
 });

@@ -1185,3 +1185,52 @@ describe('guest Zelle info', () => {
     expect(changed).toBe(0);
   });
 });
+
+describe('bill entry', () => {
+  it('remembers percentages typed for discount, tax and tip on scanned bills', async () => {
+    const { groupId, linhId, anId } = await createTrip();
+    const base = {
+      group_id: groupId,
+      paid_by_member_id: linhId,
+      title: 'Hotpot',
+      discount_cents: 200,
+      tax_cents: 144,
+      tip_cents: 0,
+      discount_rate_bp: 1000,
+      tax_rate_bp: 800,
+      items: [{ name: 'Hotpot', price_cents: 2000, member_ids: [linhId, anId] }],
+      participants: [
+        { member_id: linhId, items_cents: 1000, discount_cents: 100, tax_cents: 72, amount_cents: 972 },
+        { member_id: anId, items_cents: 1000, discount_cents: 100, tax_cents: 72, amount_cents: 972 },
+      ],
+    };
+    const id = await asUser(LINH, async (tx) =>
+      (await tx.query<{ id: string }>(`select save_itemized_bill($1::jsonb) as id`, [JSON.stringify(base)])).rows[0].id,
+    );
+    const read = () =>
+      asUser(LINH, async (tx) =>
+        (
+          await tx.query<{ discount_rate_bp: number | null; tax_rate_bp: number | null; tip_rate_bp: number | null; total_cents: string }>(
+            `select discount_rate_bp, tax_rate_bp, tip_rate_bp, total_cents from bills where id = $1`,
+            [id],
+          )
+        ).rows[0],
+      );
+    expect(await read()).toMatchObject({ discount_rate_bp: 1000, tax_rate_bp: 800, tip_rate_bp: null });
+    expect(Number((await read()).total_cents)).toBe(1944);
+
+    // Switching tax back to an amount clears its percentage.
+    await asUser(LINH, (tx) =>
+      tx.query(`select save_itemized_bill($1::jsonb)`, [JSON.stringify({ ...base, id, expected_version: 1, tax_rate_bp: null })]),
+    );
+    expect(await read()).toMatchObject({ discount_rate_bp: 1000, tax_rate_bp: null });
+  });
+
+  it('keeps each trip in one known currency', async () => {
+    const { groupId } = await createTrip();
+    await asUser(LINH, (tx) => tx.query(`update groups set currency = 'CHF' where id = $1`, [groupId]));
+    await expect(asUser(LINH, (tx) => tx.query(`update groups set currency = 'VND' where id = $1`, [groupId]))).rejects.toThrow(
+      /currency_check/,
+    );
+  });
+});

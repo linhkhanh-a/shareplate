@@ -6,7 +6,7 @@ import { ThemedText } from '@/components/themed-text';
 import { BudgetBar } from '@/components/budget-bar';
 import { LiveBadge } from '@/components/live-badge';
 import { TopBar } from '@/components/top-bar';
-import { Avatar, Button, Divider, Loading, Notice, Pill, Screen, Section, TextField } from '@/components/ui';
+import { Avatar, Button, Chip, ChipGroup, Divider, Loading, Notice, Pill, Screen, Section, TextField } from '@/components/ui';
 import { Fonts, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
@@ -39,12 +39,13 @@ import {
   useResetInvite,
   useSetGuestZelle,
   useSetRole,
+  useSetTripCurrency,
   useTrip,
   type Bill,
   type Member,
   type Trip,
 } from '@/lib/queries';
-import { formatCents } from '@/money';
+import { CURRENCIES, formatCents } from '@/money';
 
 export default function TripScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -201,16 +202,11 @@ function MoneySummary({
       </ThemedText>
       <View style={styles.summaryButtons}>
         <Button
-          label="Scan receipt"
-          onPress={() => router.push({ pathname: '/trips/[id]/scan', params: { id: tripId } })}
+          label="Add bill"
+          accessibilityHint="Upload a receipt or enter a bill by hand"
+          onPress={() => router.push({ pathname: '/trips/[id]/add', params: { id: tripId } })}
           style={{ ...styles.summaryButton, backgroundColor: theme.accent, borderColor: theme.accent }}
           textColor={theme.onAccent}
-        />
-        <Button
-          label="Add bill"
-          variant="secondary"
-          onPress={() => router.push({ pathname: '/trips/[id]/bill', params: { id: tripId } })}
-          style={styles.summaryButton}
         />
       </View>
       <Button
@@ -716,9 +712,45 @@ function TripSettings({ trip }: { trip: Trip }) {
       />
       {saved ? <Notice tone="success">Trip renamed.</Notice> : null}
       {rename.isError ? <Notice tone="error">{friendlyError(rename.error)}</Notice> : null}
+      <CurrencyPicker tripId={trip.id} />
       <Button label="Delete trip" variant="danger" onPress={onDelete} loading={del.isPending} />
       {del.isError ? <Notice tone="error">{friendlyError(del.error)}</Notice> : null}
     </Section>
+  );
+}
+
+/** The currency amounts are shown in. Nothing is converted: it only changes the sign. */
+function CurrencyPicker({ tripId }: { tripId: string }) {
+  const trip = useTrip(tripId);
+  const set = useSetTripCurrency(tripId);
+  const [open, setOpen] = useState(false);
+  const current = trip.data?.currency ?? 'USD';
+  const name = CURRENCIES.find((c) => c.code === current)?.name ?? current;
+  return (
+    <View style={{ gap: Spacing.two }}>
+      <ThemedText type="strong">Currency</ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        {`Amounts are shown in ${name} (${current}). Changing it only changes the sign; nothing is converted.`}
+      </ThemedText>
+      {open ? (
+        <ChipGroup label="Show amounts in">
+          {CURRENCIES.map((c) => (
+            <Chip
+              key={c.code}
+              label={`${c.code} ${c.symbol.trim()}`}
+              selected={current === c.code}
+              onPress={() => {
+                set.mutate(c.code);
+                setOpen(false);
+              }}
+            />
+          ))}
+        </ChipGroup>
+      ) : (
+        <Button variant="secondary" label="Change currency" onPress={() => setOpen(true)} loading={set.isPending} />
+      )}
+      {set.isError ? <Notice tone="error">{friendlyError(set.error)}</Notice> : null}
+    </View>
   );
 }
 

@@ -311,8 +311,7 @@ function PinnedBills({ tripId, activity }: { tripId: string; activity: Activity 
     const m = members.data?.find((x) => x.id === b.paid_by_member_id);
     return !m ? 'Someone' : m.user_id === uid ? 'You' : m.display_name;
   };
-  const addBill = (pathname: '/trips/[id]/bill' | '/trips/[id]/scan') =>
-    router.push({ pathname, params: { id: tripId, pin: activity.id } });
+  const addBill = () => router.push({ pathname: '/trips/[id]/add', params: { id: tripId, pin: activity.id } });
 
   return (
     <Section title="Bills">
@@ -348,10 +347,7 @@ function PinnedBills({ tripId, activity }: { tripId: string; activity: Activity 
       </View>
       {pin.isError ? <Notice tone="error">{friendlyError(pin.error)}</Notice> : null}
 
-      <View style={styles.row}>
-        <Button variant="secondary" label="Add a bill" onPress={() => addBill('/trips/[id]/bill')} style={styles.grow} />
-        <Button variant="secondary" label="Scan a receipt" onPress={() => addBill('/trips/[id]/scan')} style={styles.grow} />
-      </View>
+      <Button variant="secondary" label="Add a bill" onPress={addBill} />
       {others.length > 0 ? (
         <Button
           variant="quiet"

@@ -18,7 +18,7 @@ import { shareText } from '@/lib/platform';
 import { fetchBillItems, useBills, useItinerary, useMembers, usePayments, useTrip } from '@/lib/queries';
 import { personMessage, summaryText, tripSummary, type TripSummary } from '@/lib/summary';
 import { buildXlsx } from '@/lib/xlsx';
-import { formatCents } from '@/money';
+import { currencySymbol, formatCents } from '@/money';
 
 export default function ShareScreen() {
   const { id: tripId } = useLocalSearchParams<{ id: string }>();
@@ -87,7 +87,7 @@ export default function ShareScreen() {
   const exportXlsx = () =>
     run('xlsx', async () => {
       const items = await fetchBillItems(bills.data!.filter((b) => b.split_mode === 'itemized').map((b) => b.id));
-      const bytes = buildXlsx(exportSheets({ ...input, activities: plan.data ?? [], items }));
+      const bytes = buildXlsx(exportSheets({ ...input, activities: plan.data ?? [], items }), currencySymbol());
       await deliverFile(
         `${slug}.xlsx`,
         bytes,

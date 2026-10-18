@@ -203,3 +203,11 @@ describe('spreadsheet export', () => {
     expect(fileSlug('🎉')).toBe('trip');
   });
 });
+
+describe('spreadsheet currency', () => {
+  it('shows money cells with the trip currency sign', () => {
+    const files = unzipSync(buildXlsx(exportSheets(input), 'CHF '));
+    expect(strFromU8(files['xl/styles.xml'])).toContain('formatCode="&quot;CHF &quot;#,##0.00"');
+    expect(strFromU8(unzipSync(buildXlsx(exportSheets(input)))['xl/styles.xml'])).toContain('&quot;$&quot;#,##0.00');
+  });
+});

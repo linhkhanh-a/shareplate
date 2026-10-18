@@ -22,7 +22,7 @@ export function BillEndActions({
   existing,
   former,
   dirty,
-  onDiscard,
+  beforeLeave,
 }: {
   tripId: string;
   existing?: Bill;
@@ -30,8 +30,8 @@ export function BillEndActions({
   former: Member[];
   /** Whether a new bill has anything typed in it yet. */
   dirty: boolean;
-  /** Runs before leaving after a discard, e.g. to clear a saved draft. */
-  onDiscard?: () => void;
+  /** Runs just before leaving after a delete or discard: clear a kept draft, stop asking "leave?". */
+  beforeLeave?: () => void;
 }) {
   const del = useDeleteBill(tripId);
 
@@ -45,6 +45,7 @@ export function BillEndActions({
     if (!ok) return;
     try {
       await del.mutateAsync(existing.id);
+      beforeLeave?.();
       returnToTrip(tripId);
     } catch {
       // Shown below.
@@ -56,7 +57,7 @@ export function BillEndActions({
       const ok = await confirmAction('Discard this bill?', 'Nothing you typed will be saved.', 'Discard');
       if (!ok) return;
     }
-    onDiscard?.();
+    beforeLeave?.();
     returnToTrip(tripId);
   }
 

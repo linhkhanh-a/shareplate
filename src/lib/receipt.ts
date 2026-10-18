@@ -1,6 +1,19 @@
 import { looksLikeDiscount, type ScanResult } from '../../supabase/functions/scan-receipt/core';
 
-import { formatCents, MoneyError, parseCents, splitItemizedBill, type Cents, type ItemizedBillResult } from '@/money';
+import {
+  centsToText,
+  formatCents,
+  MoneyError,
+  normalizePercentText,
+  parseMoneyText,
+  parsePercentToBasisPoints,
+  percentOfCents,
+  splitItemizedBill,
+  type Cents,
+  type ItemizedBillResult,
+} from '@/money';
+
+import { formatPercent } from '@/lib/ledger';
 
 export type { ScanResult };
 export { looksLikeDiscount };
@@ -24,6 +37,10 @@ export interface ReceiptDraft {
   discount: string;
   tax: string;
   tip: string;
+  /** Whether each of discount, tax and tip was typed as an amount or a percentage. */
+  discountMode: ExtraMode;
+  taxMode: ExtraMode;
+  tipMode: ExtraMode;
   imagePath: string | null;
   /** What the receipt itself printed, to compare against. */
   printedSubtotalCents: number | null;
@@ -31,11 +48,14 @@ export interface ReceiptDraft {
   warnings: string[];
 }
 
+/** "$" or "%": how discount, tax and tip are typed. */
+export type ExtraMode = 'amount' | 'percent';
+
 let nextKey = 0;
 export const newItemKey = () => `item-${Date.now().toString(36)}-${(nextKey++).toString(36)}`;
 
 const centsText = (cents: number | null | undefined) =>
-  cents === null || cents === undefined || cents === 0 ? '' : formatCents(cents).replace(/[$,]/g, '');
+  cents === null || cents === undefined || cents === 0 ? '' : centsToText(cents);
 
 export function emptyDraft(base: { payerId: string; date: string; imagePath?: string | null }): ReceiptDraft {
   return {
@@ -48,6 +68,9 @@ export function emptyDraft(base: { payerId: string; date: string; imagePath?: st
     discount: '',
     tax: '',
     tip: '',
+    discountMode: 'amount',
+    taxMode: 'amount',
+    tipMode: 'amount',
     imagePath: base.imagePath ?? null,
     printedSubtotalCents: null,
     printedTotalCents: null,
@@ -71,6 +94,9 @@ export function draftFromScan(
     discount: centsText(scan.discount_cents),
     tax: centsText(scan.tax_cents),
     tip: centsText(scan.tip_cents),
+    discountMode: 'amount',
+    taxMode: 'amount',
+    tipMode: 'amount',
     imagePath: base.imagePath,
     printedSubtotalCents: scan.subtotal_cents,
     printedTotalCents: scan.total_cents,
@@ -87,9 +113,14 @@ export interface SavedItemizedBill {
   discount_cents: number;
   tax_cents: number;
   tip_cents: number;
+  discount_rate_bp?: number | null;
+  tax_rate_bp?: number | null;
+  tip_rate_bp?: number | null;
   bill_image_path: string | null;
   items: { name: string; price_cents: number; member_ids: string[] }[];
 }
+
+const rateText = (bp: number) => formatPercent(bp).replace('%', '');
 
 export function draftFromBill(bill: SavedItemizedBill): ReceiptDraft {
   return {
@@ -104,9 +135,12 @@ export function draftFromBill(bill: SavedItemizedBill): ReceiptDraft {
       price: centsText(i.price_cents) || '0',
       memberIds: [...i.member_ids],
     })),
-    discount: centsText(bill.discount_cents),
-    tax: centsText(bill.tax_cents),
-    tip: centsText(bill.tip_cents),
+    discount: bill.discount_rate_bp != null ? rateText(bill.discount_rate_bp) : centsText(bill.discount_cents),
+    tax: bill.tax_rate_bp != null ? rateText(bill.tax_rate_bp) : centsText(bill.tax_cents),
+    tip: bill.tip_rate_bp != null ? rateText(bill.tip_rate_bp) : centsText(bill.tip_cents),
+    discountMode: bill.discount_rate_bp != null ? 'percent' : 'amount',
+    taxMode: bill.tax_rate_bp != null ? 'percent' : 'amount',
+    tipMode: bill.tip_rate_bp != null ? 'percent' : 'amount',
     imagePath: bill.bill_image_path,
     printedSubtotalCents: null,
     printedTotalCents: null,
@@ -117,12 +151,53 @@ export function draftFromBill(bill: SavedItemizedBill): ReceiptDraft {
 const readAmount = (text: string): Cents | null => {
   if (!text.trim()) return 0;
   try {
-    const cents = parseCents(text);
+    const cents = parseMoneyText(text);
     return cents < 0 ? null : cents;
   } catch {
     return null;
   }
 };
+
+/** A typed percentage in basis points (10% = 1000), 0 when empty, null when unreadable. */
+export const readRate = (text: string): number | null => {
+  if (!text.trim()) return 0;
+  const normal = normalizePercentText(text);
+  if (normal === null) return null;
+  try {
+    return parsePercentToBasisPoints(normal || '0');
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Discount, tax and tip in cents. Percentages are of: the items (discount),
+ * the items after discount (tax), and the items after discount, before tax (tip).
+ */
+export function extrasCents(
+  draft: Pick<ReceiptDraft, 'discount' | 'tax' | 'tip' | 'discountMode' | 'taxMode' | 'tipMode'>,
+  subtotal: Cents,
+): { discount: Cents; tax: Cents; tip: Cents; rates: { discount: number | null; tax: number | null; tip: number | null } } | null {
+  const read = (text: string, mode: ExtraMode) => (mode === 'percent' ? readRate(text) : readAmount(text));
+  const d = read(draft.discount, draft.discountMode);
+  const t = read(draft.tax, draft.taxMode);
+  const p = read(draft.tip, draft.tipMode);
+  if (d === null || t === null || p === null) return null;
+  const discount = draft.discountMode === 'percent' ? percentOfCents(subtotal, Math.min(d, 10_000)) : d;
+  const base = Math.max(subtotal - discount, 0);
+  const tax = draft.taxMode === 'percent' ? percentOfCents(base, t) : t;
+  const tip = draft.tipMode === 'percent' ? percentOfCents(base, p) : p;
+  return {
+    discount,
+    tax,
+    tip,
+    rates: {
+      discount: draft.discountMode === 'percent' ? d : null,
+      tax: draft.taxMode === 'percent' ? t : null,
+      tip: draft.tipMode === 'percent' ? p : null,
+    },
+  };
+}
 
 export interface DraftCheck {
   /** Step 1: per-item problems, keyed by item. */
@@ -130,7 +205,15 @@ export interface DraftCheck {
   itemsOk: boolean;
   /** Step 2: amounts and totals. */
   totalsMessage: string | null;
-  totals: { subtotal: Cents; discount: Cents; tax: Cents; tip: Cents; total: Cents } | null;
+  totals: {
+    subtotal: Cents;
+    discount: Cents;
+    tax: Cents;
+    tip: Cents;
+    total: Cents;
+    /** Basis points for whichever were typed as percentages. */
+    rates: { discount: number | null; tax: number | null; tip: number | null };
+  } | null;
   /** Differences from what the receipt printed (warnings, not blockers). */
   mismatches: string[];
   /** Tax as a share of the discounted subtotal, e.g. "8%". */
@@ -166,13 +249,15 @@ export function checkDraft(draft: ReceiptDraft): DraftCheck {
   };
   if (!itemsOk) return { ...empty, totalsMessage: draft.items.length ? 'Fix the items first.' : 'Add at least one item.' };
 
-  const discount = readAmount(draft.discount);
-  const tax = readAmount(draft.tax);
-  const tip = readAmount(draft.tip);
-  if (discount === null || tax === null || tip === null) {
-    return { ...empty, totalsMessage: 'Enter discount, tax and tip like 3.50, or leave them empty.' };
-  }
   const subtotal = prices.reduce((a, b) => a + b, 0);
+  const extras = extrasCents(draft, subtotal);
+  if (extras === null) {
+    return { ...empty, totalsMessage: 'Enter discount, tax and tip like 3.50 or 10%, or leave them empty.' };
+  }
+  if (draft.discountMode === 'percent' && (readRate(draft.discount) ?? 0) > 10_000) {
+    return { ...empty, totalsMessage: 'A discount can be at most 100%.' };
+  }
+  const { discount, tax, tip } = extras;
   if (discount > subtotal) return { ...empty, totalsMessage: 'The discount is bigger than the items subtotal.' };
   const total = subtotal - discount + tax + tip;
   if (total <= 0) return { ...empty, totalsMessage: 'The bill needs an amount above $0.00.' };
@@ -204,7 +289,7 @@ export function checkDraft(draft: ReceiptDraft): DraftCheck {
   const discounted = subtotal - discount;
   const taxRate = tax > 0 && discounted > 0 ? `${(Math.round((tax / discounted) * 1000) / 10).toString()}%` : null;
 
-  const totals = { subtotal, discount, tax, tip, total };
+  const totals = { subtotal, discount, tax, tip, total, rates: extras.rates };
   const unassigned = draft.items.filter((i) => i.memberIds.length === 0);
   if (unassigned.length > 0) {
     const names = unassigned.slice(0, 2).map((i) => `"${i.name.trim()}"`);
@@ -251,6 +336,7 @@ export function itemizedPayload(
     discount_cents: result.members.reduce((s, m) => s + m.discountCents, 0),
     tax_cents: result.members.reduce((s, m) => s + m.taxCents, 0),
     tip_cents: result.members.reduce((s, m) => s + m.tipCents, 0),
+    ...rates(draft),
     items: draft.items.map((i) => ({ name: i.name.trim(), price_cents: readAmount(i.price) ?? 0, member_ids: i.memberIds })),
     participants: result.members.map((m) => ({
       member_id: m.memberId,
@@ -263,15 +349,23 @@ export function itemizedPayload(
   };
 }
 
+function rates(draft: ReceiptDraft) {
+  const bp = (text: string, mode: ExtraMode) => (mode === 'percent' ? (readRate(text) ?? 0) : null);
+  return {
+    discount_rate_bp: bp(draft.discount, draft.discountMode),
+    tax_rate_bp: bp(draft.tax, draft.taxMode),
+    tip_rate_bp: bp(draft.tip, draft.tipMode),
+  };
+}
+
 /** Turns an item into part of the discount, for discount lines read as items. */
 export function moveItemToDiscount(draft: ReceiptDraft, key: string): ReceiptDraft {
   const item = draft.items.find((i) => i.key === key);
   if (!item) return draft;
   const price = readAmount(item.price) ?? 0;
-  const current = readAmount(draft.discount) ?? 0;
-  return {
-    ...draft,
-    items: draft.items.filter((i) => i.key !== key),
-    discount: centsText(current + price),
-  };
+  const items = draft.items.filter((i) => i.key !== key);
+  // A percentage discount becomes the amount it came to, plus this line.
+  const subtotal = draft.items.reduce((sum, i) => sum + (readAmount(i.price) ?? 0), 0);
+  const current = extrasCents(draft, subtotal)?.discount ?? 0;
+  return { ...draft, items, discount: centsText(current + price), discountMode: 'amount' };
 }

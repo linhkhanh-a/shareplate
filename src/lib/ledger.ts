@@ -1,9 +1,11 @@
 import {
+  allocate,
+  centsToText,
   computeBalances,
   FULL_PERCENT_BP,
   formatCents,
-  MoneyError,
-  parseCents,
+  normalizePercentText,
+  parseMoneyText,
   parsePercentToBasisPoints,
   simplifyDebts,
   splitByPercent,
@@ -33,24 +35,30 @@ export interface ComputedShare {
 }
 
 export type SplitResult =
-  | { ok: true; shares: ComputedShare[]; status: string }
-  | { ok: false; message: string; status: string };
+  | { ok: true; shares: ComputedShare[]; status: string; auto: Record<string, string> }
+  | { ok: false; message: string; status: string; auto: Record<string, string> };
 
 /**
  * Works out everyone's share as the bill is being typed, using the money
  * engine, and explains what's missing when the numbers don't add up yet.
+ *
+ * In "By percent" and "Exact amounts", anyone left blank gets the rest
+ * automatically (split equally if several are blank, to the exact cent or
+ * hundredth of a percent). `auto` holds what was filled in, by person, so the
+ * screen can show it in grey.
  */
 export function computeSplit(mode: ManualMode, totalText: string, rows: SplitRow[]): SplitResult {
+  const none = {} as Record<string, string>;
   let total: Cents;
   try {
-    total = parseCents(totalText || '0');
+    total = parseMoneyText(totalText || '0');
   } catch {
-    return { ok: false, message: 'Enter the bill amount, like 42.50.', status: '' };
+    return { ok: false, message: 'Enter the bill amount, like 42.50.', status: '', auto: none };
   }
-  if (total <= 0) return { ok: false, message: 'Enter the bill amount, like 42.50.', status: '' };
+  if (total <= 0) return { ok: false, message: 'Enter the bill amount, like 42.50.', status: '', auto: none };
 
   const included = rows.filter((r) => r.included);
-  if (included.length === 0) return { ok: false, message: 'Choose who is splitting this bill.', status: '' };
+  if (included.length === 0) return { ok: false, message: 'Choose who is splitting this bill.', status: '', auto: none };
 
   if (mode === 'equal') {
     const shares = splitEqual(
@@ -61,66 +69,97 @@ export function computeSplit(mode: ManualMode, totalText: string, rows: SplitRow
       ok: true,
       shares: shares.map((s) => ({ ...s, shareInput: null })),
       status: `${formatCents(total)} split ${included.length} ${included.length === 1 ? 'way' : 'ways'}`,
+      auto: none,
     };
   }
 
+  const typed = included.filter((r) => r.input.trim());
+  const blank = included.filter((r) => !r.input.trim());
+
   if (mode === 'percent') {
+    const values = new Map<string, number>();
     let sum = 0;
-    const inputs: { memberId: string; basisPoints: number }[] = [];
-    for (const r of included) {
+    for (const r of typed) {
+      const normal = normalizePercentText(r.input);
+      let bp: number;
       try {
-        const bp = parsePercentToBasisPoints(r.input || '0');
-        sum += bp;
-        inputs.push({ memberId: r.memberId, basisPoints: bp });
+        if (normal === null) throw new Error('bad');
+        bp = parsePercentToBasisPoints(normal || '0');
       } catch {
-        return { ok: false, message: 'Percentages can have at most two decimals, like 33.33.', status: '' };
+        return { ok: false, message: 'Enter each percentage like 25 or 33.33.', status: '', auto: none };
       }
+      sum += bp;
+      values.set(r.memberId, bp);
     }
-    const status = `${formatPercent(sum)} of 100%`;
-    if (sum !== FULL_PERCENT_BP) {
-      const diff = FULL_PERCENT_BP - sum;
+    const left = FULL_PERCENT_BP - sum;
+    const auto: Record<string, string> = {};
+    if (blank.length > 0 && left >= 0) {
+      const parts = allocate(
+        left,
+        blank.map(() => 1),
+      );
+      blank.forEach((r, i) => {
+        values.set(r.memberId, parts[i]);
+        auto[r.memberId] = formatPercent(parts[i]).replace('%', '');
+      });
+    }
+    const assigned = [...values.values()].reduce((a, b) => a + b, 0);
+    const status = blank.length > 0 && left >= 0 ? `${formatPercent(sum)} typed, the rest filled in` : `${formatPercent(assigned)} of 100%`;
+    if (assigned !== FULL_PERCENT_BP) {
+      const diff = FULL_PERCENT_BP - assigned;
       return {
         ok: false,
-        message: diff > 0 ? `${formatPercent(diff)} still to assign.` : `${formatPercent(-diff)} too much.`,
+        message: diff > 0 ? `${formatPercent(diff)} left to assign.` : `Over by ${formatPercent(-diff)}.`,
         status,
+        auto,
       };
     }
+    const inputs = included.map((r) => ({ memberId: r.memberId, basisPoints: values.get(r.memberId)! }));
     const shares = splitByPercent(total, inputs);
-    return {
-      ok: true,
-      shares: shares.map((s, i) => ({ ...s, shareInput: inputs[i].basisPoints })),
-      status,
-    };
+    return { ok: true, shares: shares.map((s, i) => ({ ...s, shareInput: inputs[i].basisPoints })), status, auto };
   }
 
   // Exact amounts
+  const values = new Map<string, Cents>();
   let sum = 0;
-  const inputs: { memberId: string; amountCents: Cents }[] = [];
-  for (const r of included) {
+  for (const r of typed) {
     try {
-      const cents = parseCents(r.input || '0');
+      const cents = parseMoneyText(r.input);
       if (cents < 0) throw new Error('negative');
       sum += cents;
-      inputs.push({ memberId: r.memberId, amountCents: cents });
+      values.set(r.memberId, cents);
     } catch {
-      return { ok: false, message: 'Enter each amount like 12.50.', status: '' };
+      return { ok: false, message: 'Enter each amount like 12.50.', status: '', auto: none };
     }
   }
-  const status = `${formatCents(sum)} of ${formatCents(total)}`;
-  try {
-    const shares = splitExact(total, inputs);
-    return { ok: true, shares: shares.map((s) => ({ ...s, shareInput: s.amountCents })), status };
-  } catch (e) {
-    if (e instanceof MoneyError && e.code === 'EXACT_NOT_TOTAL') {
-      const diff = total - sum;
-      return {
-        ok: false,
-        message: diff > 0 ? `${formatCents(diff)} still to assign.` : `${formatCents(-diff)} too much.`,
-        status,
-      };
-    }
-    throw e;
+  const left = total - sum;
+  const auto: Record<string, string> = {};
+  if (blank.length > 0 && left >= 0) {
+    const parts = allocate(
+      left,
+      blank.map(() => 1),
+    );
+    blank.forEach((r, i) => {
+      values.set(r.memberId, parts[i]);
+      auto[r.memberId] = centsToText(parts[i]);
+    });
   }
+  const assigned = [...values.values()].reduce((a, b) => a + b, 0);
+  const status = blank.length > 0 && left >= 0 ? `${formatCents(sum)} typed, the rest filled in` : `${formatCents(assigned)} of ${formatCents(total)}`;
+  if (assigned !== total) {
+    const diff = total - assigned;
+    return {
+      ok: false,
+      message: diff > 0 ? `${formatCents(diff)} left to assign.` : `Over by ${formatCents(-diff)}.`,
+      status,
+      auto,
+    };
+  }
+  const shares = splitExact(
+    total,
+    included.map((r) => ({ memberId: r.memberId, amountCents: values.get(r.memberId)! })),
+  );
+  return { ok: true, shares: shares.map((s) => ({ ...s, shareInput: s.amountCents })), status, auto };
 }
 
 export function formatPercent(basisPoints: number): string {
@@ -133,7 +172,7 @@ export function formatPercent(basisPoints: number): string {
 export function shareInputText(mode: ManualMode, shareInput: number | null): string {
   if (shareInput === null) return '';
   if (mode === 'percent') return formatPercent(shareInput).replace('%', '');
-  if (mode === 'exact') return formatCents(shareInput).replace('$', '').replace(/,/g, '');
+  if (mode === 'exact') return centsToText(shareInput);
   return '';
 }
 

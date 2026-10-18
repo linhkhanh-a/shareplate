@@ -416,3 +416,42 @@ you to add it first. Guests have no account, so a trip admin can record a
 guest's Zelle email or phone on the trip (stored on their place in the trip,
 never on a profile). Every delete or remove now asks first, including scanned
 bills, which can now be deleted, and new bills, which can be discarded.
+
+## 57. One way to add a bill
+
+"Add bill" opens one screen with three choices: upload a receipt, one total,
+or by item. "By item" is the scanner's item-by-item flow without a photo, and
+both hand-entry screens have a One total / By item switch. Every amount box
+accepts what people type ("12.345", "$1,234.5", "12,50", "1.234,56") and
+rounds to the cent, half up, as soon as you leave the box, so the screen
+always shows exactly what's saved. The database keeps storing whole cents.
+
+## 58. Blank boxes get the rest
+
+In "By percent" and "Exact amounts", anyone left blank gets what's left of the
+bill (split equally if several are blank, to the exact cent or hundredth of a
+percent, with the usual rounding). The filled-in value shows in grey with
+"auto", and typing over it makes it yours. If the typed amounts are already
+over the total, nothing is filled in and the screen says "Over by …". Each
+person's final amount is saved; reopening a bill shows every box filled.
+
+## 59. Discount, tax and tip as $ or %
+
+Each can be typed as an amount or a percentage. A discount % is of the items,
+a tax % of the items after discount, and a tip % of the items after discount,
+before tax; each is rounded to the cent. The percentages typed are saved with
+the bill (`discount_rate_bp`, `tax_rate_bp`, `tip_rate_bp`) so editing shows
+"10%" again; the cents stay what everything adds up from. Switching between $
+and % keeps the same money.
+
+## 60. Scanning without losing anything, trip days and currency
+
+The scanner has step tabs (Items, Totals, People) to jump anywhere, shows the
+receipt photo on every step (smaller, bigger or hidden), keeps the unsaved
+bill on the device and offers it back ("Continue where you left off?"), and
+asks before you leave with unsaved changes. Bill dates offer the trip's days
+("Day 2 · Sat, Oct 24") when the trip has dates, read typed dates like "10/23"
+or "Oct 23" (US style, month first), and have a calendar button. Each trip
+can show its amounts in one currency with cents (USD, EUR, CHF…); it only
+changes the sign, nothing is converted. Currencies without cents (VND, JPY,
+KRW) need their own rounding and come later.
