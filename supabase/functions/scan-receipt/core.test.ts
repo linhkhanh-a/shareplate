@@ -62,6 +62,31 @@ describe('normalizeReceipt', () => {
     ]);
   });
 
+  it('does not add tax that is already inside the prices ("Incl. 7.6% MwSt")', () => {
+    const berghotel = {
+      is_receipt: true,
+      vendor: 'Berghotel Grosse Scheidegg',
+      items: [
+        { name: 'Latte Macchiato', quantity: 2, line_total: 9 },
+        { name: 'Gloki', quantity: 1, line_total: 5 },
+        { name: 'Schweinschnitzel', quantity: 1, line_total: 22 },
+        { name: 'Chässpätzli', quantity: 1, line_total: 18.5 },
+      ],
+      subtotal: null,
+      tax: 3.85,
+      total: 54.5,
+    };
+    // The reader says so…
+    const flagged = normalizeReceipt({ ...berghotel, tax_included: true });
+    expect(flagged).toMatchObject({ tax_cents: 0, total_cents: 5450 });
+    expect(flagged.warnings).toEqual(["The prices already include the tax (3.85), so it isn't added again."]);
+    // …or the numbers give it away even when it doesn't.
+    expect(normalizeReceipt(berghotel).tax_cents).toBe(0);
+    // Tax added on top stays as it is.
+    const onTop = normalizeReceipt({ ...berghotel, tax_included: false, total: 58.35 });
+    expect(onTop).toMatchObject({ tax_cents: 385, warnings: [] });
+  });
+
   it('accepts a subtotal printed after discounts', () => {
     const r = normalizeReceipt({
       is_receipt: true,

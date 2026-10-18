@@ -145,4 +145,38 @@ describe('scan wizard drafts', () => {
     // Unknown keys leave the draft alone.
     expect(moveItemToDiscount(d, 'nope')).toBe(d);
   });
+
+  it('spots a total that only adds up with the tax already included, and fixes it in one tap', () => {
+    const d = draftFromScan(
+      {
+        vendor: 'Berghotel Grosse Scheidegg',
+        date: '2007-07-30',
+        category: 'Food',
+        items: [
+          { name: '2× Latte Macchiato', price_cents: 900 },
+          { name: 'Gloki', price_cents: 500 },
+          { name: 'Schweinschnitzel', price_cents: 2200 },
+          { name: 'Chässpätzli', price_cents: 1850 },
+        ],
+        subtotal_cents: null,
+        discount_cents: 0,
+        tax_cents: 385,
+        tip_cents: 0,
+        total_cents: 5450,
+        warnings: [],
+      },
+      base,
+    );
+    const c = checkDraft(d);
+    expect(c.totals?.total).toBe(5835);
+    expect(c.taxLooksIncluded).toBe(true);
+    expect(c.mismatches[0]).toMatch(/exactly the tax less\. The tax looks already included/);
+
+    const fixed = checkDraft({ ...d, tax: '' });
+    expect(fixed).toMatchObject({ taxLooksIncluded: false, mismatches: [] });
+    expect(fixed.totals?.total).toBe(5450);
+
+    // A total that's off for another reason isn't blamed on tax.
+    expect(checkDraft({ ...d, tip: '1' }).taxLooksIncluded).toBe(false);
+  });
 });

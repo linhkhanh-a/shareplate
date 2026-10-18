@@ -55,6 +55,7 @@ export const RECEIPT_SCHEMA = {
     subtotal: { type: ['number', 'null'] },
     discount: { type: ['number', 'null'] },
     tax: { type: ['number', 'null'] },
+    tax_included: { type: ['boolean', 'null'], description: 'True when the prices already include the tax' },
     tip: { type: ['number', 'null'] },
     total: { type: ['number', 'null'] },
   },
@@ -66,7 +67,7 @@ Return JSON only, matching this shape:
 {"is_receipt": boolean, "vendor": string|null, "date": "YYYY-MM-DD"|null,
  "category": one of ${CATEGORIES.join(', ')},
  "items": [{"name": string, "quantity": number|null, "line_total": number|null}],
- "subtotal": number|null, "discount": number|null, "tax": number|null, "tip": number|null, "total": number|null}
+ "subtotal": number|null, "discount": number|null, "tax": number|null, "tax_included": boolean|null, "tip": number|null, "total": number|null}
 Rules:
 - line_total is the price printed on that line (quantity already multiplied in). Plain numbers, no currency signs.
 - List every purchased item once. Do not list subtotal, tax, tip, service charge, total, payment, change or card lines as items.
@@ -76,6 +77,9 @@ Rules:
 - discount is the total of all discounts as a POSITIVE number.
 - subtotal is exactly what the receipt prints next to SUBTOTAL (some stores print it after discounts).
 - tax is the total of all taxes. tip includes service charges and gratuity.
+- Many receipts (Europe, Asia, Australia) print tax that is already inside the prices, e.g. "Incl. 7.6% MwSt",
+  "inkl. MwSt", "VAT included", "TVA incluse", "TTC", "IVA incluido", "GST included". Then set tax_included to true
+  (still report the amount in tax). Set it to false when the tax is added on top of the subtotal.
 - The receipt may be blurry, crumpled or handwritten: give your best reading, and use null when a value is not printed.
 - category: Food for restaurants, cafes, groceries and drinks; Transport for taxis, rides, fuel, tickets; Lodging for hotels and stays; Activities for tours, museums, events; Shopping for stores; otherwise Other.
 - If the photo is not a receipt or bill, set is_receipt to false and items to [].`;
@@ -154,10 +158,18 @@ export function normalizeReceipt(raw: unknown): ScanResult {
 
   const positive = (v: unknown) => Math.abs(toCents(v) ?? 0);
   const discount = positive(r.discount) + extraDiscount;
-  const tax = positive(r.tax);
+  const printedTax = positive(r.tax);
   const tip = positive(r.tip);
   const subtotal = toCents(r.subtotal);
   const total = toCents(r.total);
+
+  // Tax already inside the prices ("Incl. 7.6% MwSt") must not be added again. Trust the reader's flag, and
+  // also catch it from the numbers: the total matches without the tax, but not with it.
+  const itemsSum = items.reduce((s, i) => s + i.price_cents, 0);
+  const matchesWithoutTax = total !== null && itemsSum - discount + tip === total;
+  const matchesWithTax = total !== null && itemsSum - discount + printedTax + tip === total;
+  const taxIncluded = printedTax > 0 && (r.tax_included === true || (matchesWithoutTax && !matchesWithTax));
+  const tax = taxIncluded ? 0 : printedTax;
 
   if (items.length === 0) warnings.push("Couldn't find any items. Add them by hand.");
   if (movedDiscounts.length > 0) {
@@ -165,6 +177,10 @@ export function normalizeReceipt(raw: unknown): ScanResult {
       `Counted ${movedDiscounts.length === 1 ? 'this line as a discount' : `${movedDiscounts.length} lines as discounts`}, not items: ` +
         `${movedDiscounts.slice(0, 4).join(', ')}${movedDiscounts.length > 4 ? '…' : ''}. Check the discount on the next step.`,
     );
+  }
+  if (taxIncluded) {
+    const amount = (printedTax / 100).toFixed(2);
+    warnings.push(`The prices already include the tax (${amount}), so it isn't added again.`);
   }
   // Subtotal and total mismatches are checked live in the app as people edit, so they aren't repeated here.
 

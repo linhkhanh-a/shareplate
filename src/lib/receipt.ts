@@ -135,6 +135,8 @@ export interface DraftCheck {
   mismatches: string[];
   /** Tax as a share of the discounted subtotal, e.g. "8%". */
   taxRate: string | null;
+  /** The receipt's total only adds up if its tax is already inside the prices ("Incl. 7.6% MwSt"). */
+  taxLooksIncluded: boolean;
   /** Step 3: who had what. */
   assignMessage: string | null;
   result: ItemizedBillResult | null;
@@ -158,6 +160,7 @@ export function checkDraft(draft: ReceiptDraft): DraftCheck {
     totals: null,
     mismatches: [],
     taxRate: null,
+    taxLooksIncluded: false,
     assignMessage: null,
     result: null,
   };
@@ -190,8 +193,13 @@ export function checkDraft(draft: ReceiptDraft): DraftCheck {
         `${formatCents(Math.abs(diff))} ${diff > 0 ? 'more' : 'less'} than the receipt's subtotal of ${formatCents(printed)}. ${hint}`,
     );
   }
+  const taxLooksIncluded = tax > 0 && draft.printedTotalCents !== null && draft.printedTotalCents === total - tax;
   if (draft.printedTotalCents !== null && draft.printedTotalCents !== total) {
-    mismatches.push(`This comes to ${formatCents(total)}, but the receipt's total says ${formatCents(draft.printedTotalCents)}.`);
+    mismatches.push(
+      taxLooksIncluded
+        ? `This comes to ${formatCents(total)}, but the receipt's total is ${formatCents(draft.printedTotalCents)}: exactly the tax less. The tax looks already included in the prices (receipts often say "incl." or "VAT included").`
+        : `This comes to ${formatCents(total)}, but the receipt's total says ${formatCents(draft.printedTotalCents)}.`,
+    );
   }
   const discounted = subtotal - discount;
   const taxRate = tax > 0 && discounted > 0 ? `${(Math.round((tax / discounted) * 1000) / 10).toString()}%` : null;
@@ -206,6 +214,7 @@ export function checkDraft(draft: ReceiptDraft): DraftCheck {
       totals,
       mismatches,
       taxRate,
+      taxLooksIncluded,
       assignMessage: `Choose who had ${names.join(' and ')}${more}.`,
     };
   }
@@ -217,9 +226,9 @@ export function checkDraft(draft: ReceiptDraft): DraftCheck {
       taxCents: tax,
       tipCents: tip,
     });
-    return { ...empty, totals, mismatches, taxRate, result };
+    return { ...empty, totals, mismatches, taxRate, taxLooksIncluded, result };
   } catch (e) {
-    return { ...empty, totals, mismatches, taxRate, assignMessage: e instanceof MoneyError ? e.message : String(e) };
+    return { ...empty, totals, mismatches, taxRate, taxLooksIncluded, assignMessage: e instanceof MoneyError ? e.message : String(e) };
   }
 }
 

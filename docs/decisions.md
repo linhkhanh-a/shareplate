@@ -366,3 +366,13 @@ so links shared in iMessage, WhatsApp or Messenger show the app's card. Every
 page gets basic security headers (no framing by other sites, no content-type
 sniffing, a strict referrer policy, camera only for the site itself), and
 built files are cached for a year since their names change with each release.
+
+## 52. Tax that's already in the prices isn't added again
+
+Receipts in Europe, Asia and Australia often print tax that's already inside
+the prices ("Incl. 7.6% MwSt", "VAT included", "TTC"). The reader now reports
+whether tax is included, and the function also spots it from the numbers (the
+total matches without the tax but not with it). Either way the tax is set to
+0 and the note says why. On the review screen, if the total is off by exactly
+the tax, the message says the tax looks included and offers a one-tap
+"Tax is already included" fix.
