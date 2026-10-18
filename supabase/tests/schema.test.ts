@@ -590,3 +590,107 @@ describe('live updates', () => {
     await expect(send(OUTSIDER)).rejects.toThrow(/row-level security/);
   });
 });
+
+describe('scanned (itemized) bills and receipt photos', () => {
+  async function saveItemized(userId: string, bill: Record<string, unknown>) {
+    return asUser(userId, async (tx) => {
+      const r = await tx.query<{ id: string }>(`select save_itemized_bill($1::jsonb) as id`, [JSON.stringify(bill)]);
+      return r.rows[0].id;
+    });
+  }
+
+  // The worked example from docs/money-engine.md.
+  const dinner = (ids: { linhId: string; anId: string; guestId: string; groupId: string }) => ({
+    group_id: ids.groupId,
+    paid_by_member_id: ids.linhId,
+    title: 'Dinner in Hội An',
+    vendor: 'Bếp Việt',
+    category: 'Food',
+    image_path: `${ids.groupId}/receipt.jpg`,
+    discount_cents: 600,
+    tax_cents: 240,
+    tip_cents: 900,
+    items: [
+      { name: 'Pho', price_cents: 1500, member_ids: [ids.linhId] },
+      { name: 'Banh mi', price_cents: 900, member_ids: [ids.anId] },
+      { name: 'Spring rolls', price_cents: 1200, member_ids: [ids.linhId, ids.anId, ids.guestId] },
+    ],
+    participants: [
+      { member_id: ids.linhId, items_cents: 1900, discount_cents: 317, tax_cents: 127, tip_cents: 300, amount_cents: 2010 },
+      { member_id: ids.anId, items_cents: 1300, discount_cents: 217, tax_cents: 87, tip_cents: 300, amount_cents: 1470 },
+      { member_id: ids.guestId, items_cents: 400, discount_cents: 66, tax_cents: 26, tip_cents: 300, amount_cents: 660 },
+    ],
+  });
+
+  it('saves items, who had them and each person’s breakdown, with totals worked out by the database', async () => {
+    const trip = await createTrip();
+    const id = await saveItemized(LINH, dinner(trip));
+    const bill = await asUser(AN, (tx) =>
+      tx.query<{ split_mode: string; subtotal_cents: string; total_cents: string; vendor: string }>(
+        `select split_mode, subtotal_cents, total_cents, vendor from bills where id = $1`,
+        [id],
+      ),
+    );
+    expect(bill.rows[0]).toMatchObject({ split_mode: 'itemized', vendor: 'Bếp Việt' });
+    expect(Number(bill.rows[0].subtotal_cents)).toBe(3600);
+    expect(Number(bill.rows[0].total_cents)).toBe(4140);
+
+    const shared = await asUser(AN, (tx) =>
+      tx.query<{ n: string }>(
+        `select count(*) as n from bill_item_mappings m join bill_items i on i.id = m.bill_item_id
+         where i.bill_id = $1 and i.name = 'Spring rolls'`,
+        [id],
+      ),
+    );
+    expect(Number(shared.rows[0].n)).toBe(3);
+    expect(await balances(LINH, trip.groupId)).toEqual({ An: -1470, Linh: 2130, 'Minh (guest)': -660 });
+  });
+
+  it('edits a scanned bill by replacing its items, and catches stale edits', async () => {
+    const trip = await createTrip();
+    const id = await saveItemized(LINH, dinner(trip));
+    await saveItemized(AN, {
+      ...dinner(trip),
+      id,
+      expected_version: 1,
+      discount_cents: 0,
+      tax_cents: 0,
+      tip_cents: 0,
+      items: [{ name: 'Pho', price_cents: 1500, member_ids: [trip.linhId] }],
+      participants: [{ member_id: trip.linhId, items_cents: 1500, amount_cents: 1500 }],
+    });
+    const items = await asUser(LINH, (tx) => tx.query(`select name from bill_items where bill_id = $1`, [id]));
+    expect(items.rows).toEqual([{ name: 'Pho' }]);
+    await expect(saveItemized(LINH, { ...dinner(trip), id, expected_version: 1 })).rejects.toThrow(/STALE_BILL/);
+  });
+
+  it('refuses an item nobody had, and breakdowns that do not add up', async () => {
+    const trip = await createTrip();
+    const bill = dinner(trip);
+    await expect(
+      saveItemized(LINH, { ...bill, items: [...bill.items, { name: 'Tea', price_cents: 300, member_ids: [] }] }),
+    ).rejects.toThrow(/ITEM_UNASSIGNED/);
+    await expect(
+      saveItemized(LINH, { ...bill, participants: bill.participants.slice(0, 2) }),
+    ).rejects.toThrow(/SHARES_NOT_TOTAL/);
+  });
+
+  it('keeps receipt photos private to the trip', async () => {
+    const { groupId } = await createTrip();
+    const upload = (userId: string, name: string) =>
+      asUser(userId, (tx) => tx.query(`insert into storage.objects (bucket_id, name) values ('receipts', $1)`, [name]));
+    await upload(AN, `${groupId}/dinner.jpg`);
+    await expect(upload(OUTSIDER, `${groupId}/sneaky.jpg`)).rejects.toThrow(/row-level security/);
+    await expect(upload(AN, `../${groupId}/x.jpg`)).rejects.toThrow(/row-level security/);
+
+    const seen = (userId: string) =>
+      asUser(userId, async (tx) => (await tx.query(`select name from storage.objects`)).rows.length);
+    expect(await seen(LINH)).toBe(1);
+    expect(await seen(OUTSIDER)).toBe(0);
+  });
+
+  it('creates the private receipts bucket', async () => {
+    const r = await db.query<{ public: boolean }>(`select public from storage.buckets where id = 'receipts'`);
+    expect(r.rows).toEqual([{ public: false }]);
+  });
+});

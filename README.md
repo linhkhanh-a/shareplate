@@ -16,8 +16,8 @@ One codebase runs on **iPhone, iPad, and the web**.
 | 2 | Sign in with Google, trips, members, guests | ✅ Done |
 | 3 | Add bills by hand, ledger, Settle Up | ✅ Done |
 | 4 | Real-time sync between phones | ✅ Done |
-| 5 | Receipt scanner | Next |
-| 6 | Itinerary planner and pinning bills | |
+| 5 | Receipt scanner | ✅ Done |
+| 6 | Itinerary planner and pinning bills | Next |
 | 7 | Budget dashboard | |
 | 8 | Quick-split mode, share card, spreadsheet export | |
 | 9 | Polish and launch | |
@@ -44,7 +44,7 @@ src/app/          screens (every file is a route)
 src/money/        the money engine: pure TypeScript, no UI, fully tested
 src/lib/          sign-in, database queries, error messages
 src/components/   shared building blocks (buttons, fields, rows)
-supabase/         database migrations and schema tests
+supabase/         database migrations, schema tests, and the receipt reader (functions/)
 docs/             roadmap, decisions, money rules
 ```
 
@@ -61,9 +61,10 @@ npm run check      # typecheck + lint + tests (what CI runs)
 
 ## Deploying
 
-- **Database:** new files in `supabase/migrations/` are applied to the live
-  Supabase project automatically when they're merged to `main`
-  (`.github/workflows/deploy-database.yml`).
+- **Database and receipt reader:** new files in `supabase/migrations/` and
+  `supabase/functions/` are deployed to the live Supabase project automatically
+  when they're merged to `main` (`.github/workflows/deploy-database.yml`).
+  The reader needs a `GEMINI_API_KEY` secret in Supabase (Edge Functions → Secrets).
 - **Website:** Vercel builds every pull request as a preview and `main` as the
   live site.
 

@@ -42,10 +42,14 @@ link once hosting is set up, and a "try this" checklist.
 - [x] Private live channels: only trip members can join
 - [x] Catch up automatically after a dropped connection
 
-## Phase 5: Receipt scanner
-- [ ] Camera or upload, stored privately
-- [ ] Vision model reads items, tax, tip, discount and vendor
-- [ ] Three-step wizard: check items, check totals and category, assign people
+## Phase 5: Receipt scanner ✅
+- [x] Take or choose a photo; it's shrunk and stored privately for the trip
+- [x] Gemini (free tier) reads items, discount, tax, tip, vendor, date and suggests a category
+- [x] Step 1: photo on top, editable items below; warnings when numbers look off
+- [x] Step 2: totals with tax rate, title, category, payer, date
+- [x] Step 3: tap who had each item (shared dishes split equally); live per-person breakdown
+- [x] Type the items instead when there's no photo or the reader can't help
+- [x] Edit scanned bills item by item; receipt photo kept with the bill
 
 ## Phase 6: Itinerary
 - [ ] Days, activities, times, places, planned budgets

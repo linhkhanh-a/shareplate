@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths:
       - 'supabase/migrations/**'
+      - 'supabase/functions/**'
       - '.github/workflows/deploy-database.yml'
   workflow_dispatch:
 
@@ -44,6 +45,9 @@ jobs:
 
       - name: Apply new migrations
         run: supabase db push --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Deploy the receipt reader (edge function)
+        run: supabase functions deploy scan-receipt --project-ref "$SUPABASE_PROJECT_ID"
 
       - name: Show which migrations are live
         run: supabase migration list --password "$SUPABASE_DB_PASSWORD"

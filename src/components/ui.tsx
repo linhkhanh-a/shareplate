@@ -81,7 +81,7 @@ export function Button({ label, variant = 'primary', loading, disabled, style, t
       {loading ? (
         <ActivityIndicator color={textColor ?? palette.fg} />
       ) : (
-        <ThemedText type="strong" style={{ color: textColor ?? palette.fg }}>
+        <ThemedText type="strong" numberOfLines={1} style={{ color: textColor ?? palette.fg, textAlign: 'center' }}>
           {label}
         </ThemedText>
       )}

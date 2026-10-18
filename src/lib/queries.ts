@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/lib/auth';
 import { inviteUrl } from '@/lib/queries-helpers';
+import type { ScanResult } from '@/lib/receipt';
 import { supabase } from '@/lib/supabase';
 
 export { inviteUrl };
@@ -306,6 +307,10 @@ export interface BillShare {
   group_member_id: string;
   share_input: number | null;
   amount_cents: number;
+  items_cents: number;
+  discount_cents: number;
+  tax_cents: number;
+  tip_cents: number;
 }
 
 export interface Bill {
@@ -314,8 +319,13 @@ export interface Bill {
   vendor: string | null;
   category: string;
   split_mode: SplitMode;
+  subtotal_cents: number;
+  discount_cents: number;
+  tax_cents: number;
+  tip_cents: number;
   total_cents: number;
   bill_date: string;
+  bill_image_path: string | null;
   paid_by_member_id: string;
   version: number;
   created_at: string;
@@ -355,7 +365,7 @@ export function useBills(tripId: string) {
       const { data, error } = await supabase
         .from('bills')
         .select(
-          'id, title, vendor, category, split_mode, total_cents, bill_date, paid_by_member_id, version, created_at, shares:bill_participants(group_member_id, share_input, amount_cents)',
+          'id, title, vendor, category, split_mode, subtotal_cents, discount_cents, tax_cents, tip_cents, total_cents, bill_date, bill_image_path, paid_by_member_id, version, created_at, shares:bill_participants(group_member_id, share_input, amount_cents, items_cents, discount_cents, tax_cents, tip_cents)',
         )
         .eq('group_id', tripId)
         .order('bill_date', { ascending: false })
@@ -363,10 +373,18 @@ export function useBills(tripId: string) {
       if (error) throw error;
       return (data as unknown as Bill[]).map((b) => ({
         ...b,
+        subtotal_cents: n(b.subtotal_cents),
+        discount_cents: n(b.discount_cents),
+        tax_cents: n(b.tax_cents),
+        tip_cents: n(b.tip_cents),
         total_cents: n(b.total_cents),
         shares: b.shares.map((s) => ({
           ...s,
           amount_cents: n(s.amount_cents),
+          items_cents: n(s.items_cents),
+          discount_cents: n(s.discount_cents),
+          tax_cents: n(s.tax_cents),
+          tip_cents: n(s.tip_cents),
           share_input: s.share_input === null ? null : n(s.share_input),
         })),
       }));
@@ -412,8 +430,11 @@ export function useDeleteBill(tripId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (billId: string) => {
+      const photo = qc.getQueryData<Bill[]>(keys.bills(tripId))?.find((b) => b.id === billId)?.bill_image_path;
       const { error } = await supabase.from('bills').delete().eq('id', billId);
       if (error) throw error;
+      // Tidy up the receipt photo too; the bill is gone either way.
+      if (photo) await supabase.storage.from('receipts').remove([photo]);
     },
     // Disappear right away; put it back if the delete fails.
     onMutate: async (billId) => {
@@ -476,3 +497,108 @@ export function useDeletePayment(tripId: string) {
     onSettled: () => invalidateMoney(qc, tripId),
   });
 }
+
+// ---------------------------------------------------------------------------
+// Receipts (Phase 5)
+// ---------------------------------------------------------------------------
+
+export interface BillItem {
+  id: string;
+  name: string;
+  price_cents: number;
+  position: number;
+  member_ids: string[];
+}
+
+export function useBillItems(billId: string | undefined) {
+  return useQuery({
+    queryKey: ['bill-items', billId ?? ''],
+    enabled: !!billId,
+    queryFn: async (): Promise<BillItem[]> => {
+      const { data, error } = await supabase
+        .from('bill_items')
+        .select('id, name, price_cents, position, mappings:bill_item_mappings(group_member_id)')
+        .eq('bill_id', billId!)
+        .order('position');
+      if (error) throw error;
+      return (data as unknown as (Omit<BillItem, 'member_ids'> & { mappings: { group_member_id: string }[] })[]).map(
+        (i) => ({
+          id: i.id,
+          name: i.name,
+          price_cents: n(i.price_cents),
+          position: i.position,
+          member_ids: i.mappings.map((m) => m.group_member_id),
+        }),
+      );
+    },
+  });
+}
+
+export function useSaveItemizedBill(tripId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: Record<string, unknown>): Promise<string> => {
+      const { data, error } = await supabase.rpc('save_itemized_bill', { p: payload });
+      if (error) throw error;
+      return data as string;
+    },
+    onSettled: (billId) => {
+      void qc.invalidateQueries({ queryKey: ['bill-items', billId ?? ''] });
+      return invalidateMoney(qc, tripId);
+    },
+  });
+}
+
+/** Uploads a (resized) receipt photo to the trip's private folder. Returns its storage path. */
+export async function uploadReceipt(tripId: string, localUri: string): Promise<string> {
+  const response = await fetch(localUri);
+  const bytes = await response.arrayBuffer();
+  const path = `${tripId}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+  const { error } = await supabase.storage.from('receipts').upload(path, bytes, {
+    contentType: 'image/jpeg',
+    upsert: false,
+  });
+  if (error) throw error;
+  return path;
+}
+
+export class ReceiptReadError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/** Asks the receipt reader (edge function) to read an uploaded photo. */
+export async function readReceipt(path: string): Promise<ScanResult> {
+  const { data, error } = await supabase.functions.invoke('scan-receipt', { body: { path } });
+  if (error) {
+    // The function replies with { code, message } that people can act on.
+    const context = (error as { context?: Response }).context;
+    let body: { code?: string; message?: string } | undefined;
+    try {
+      body = context ? await context.json() : undefined;
+    } catch {
+      body = undefined;
+    }
+    throw new ReceiptReadError(body?.code ?? 'READER_FAILED', body?.message ?? "Couldn't read the receipt. Enter the items by hand.");
+  }
+  return data as ScanResult;
+}
+
+/** A temporary link for showing a private receipt photo. */
+export function useReceiptUrl(path: string | null | undefined) {
+  return useQuery({
+    queryKey: ['receipt-url', path ?? ''],
+    enabled: !!path,
+    staleTime: 50 * 60_000,
+    queryFn: async (): Promise<string> => {
+      const { data, error } = await supabase.storage.from('receipts').createSignedUrl(path!, 60 * 60);
+      if (error) throw error;
+      return data.signedUrl;
+    },
+  });
+}
+

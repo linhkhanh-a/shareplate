@@ -1,0 +1,137 @@
+import { describe, expect, it } from 'vitest';
+
+import { bytesToBase64, extractJson, normalizeReceipt, readWithGemini, ScanError, scanReceipt, toCents } from './core.ts';
+
+const receiptJson = {
+  is_receipt: true,
+  vendor: 'Bếp Việt',
+  date: '2026-10-17',
+  category: 'Food',
+  items: [
+    { name: 'Phở bò', quantity: 1, line_total: 15 },
+    { name: 'Bánh mì', quantity: 2, line_total: '9.00' },
+    { name: 'Spring rolls', quantity: null, line_total: 12 },
+    { name: 'Voucher', quantity: null, line_total: -6 },
+  ],
+  subtotal: 36,
+  discount: null,
+  tax: 2.4,
+  tip: 9,
+  total: 41.4,
+};
+
+describe('normalizeReceipt', () => {
+  it('turns the reader’s answer into cents, moving discount lines out of the items', () => {
+    const r = normalizeReceipt(receiptJson);
+    expect(r).toMatchObject({
+      vendor: 'Bếp Việt',
+      date: '2026-10-17',
+      category: 'Food',
+      items: [
+        { name: 'Phở bò', price_cents: 1500 },
+        { name: '2× Bánh mì', price_cents: 900 },
+        { name: 'Spring rolls', price_cents: 1200 },
+      ],
+      subtotal_cents: 3600,
+      discount_cents: 600,
+      tax_cents: 240,
+      tip_cents: 900,
+      total_cents: 4140,
+      warnings: [],
+    });
+  });
+
+  it('flags totals that don’t add up and prices it couldn’t read', () => {
+    const r = normalizeReceipt({
+      ...receiptJson,
+      items: [{ name: 'Phở bò', line_total: 15 }, { name: 'Smudged line', line_total: null }],
+    });
+    expect(r.items).toEqual([
+      { name: 'Phở bò', price_cents: 1500 },
+      { name: 'Smudged line', price_cents: 0 },
+    ]);
+    expect(r.warnings.join(' ')).toMatch(/Couldn't read the price for "Smudged line"/);
+    expect(r.warnings.join(' ')).toMatch(/don’t add up to the subtotal/);
+  });
+
+  it('refuses photos that aren’t receipts, and cleans up odd values', () => {
+    expect(() => normalizeReceipt({ is_receipt: false, items: [] })).toThrow(ScanError);
+    const r = normalizeReceipt({ is_receipt: true, items: [], category: 'Spaceships', date: '17/10/2026', tax: -1.5 });
+    expect(r).toMatchObject({ category: 'Other', date: null, tax_cents: 150 });
+    expect(r.warnings[0]).toMatch(/Couldn't find any items/);
+  });
+});
+
+describe('helpers', () => {
+  it('reads amounts in any common format', () => {
+    expect(toCents(12.5)).toBe(1250);
+    expect(toCents('$1,234.56')).toBe(123456);
+    expect(toCents('abc')).toBe(null);
+    expect(toCents(0.1 + 0.2)).toBe(30);
+  });
+
+  it('pulls JSON out of fenced or chatty replies', () => {
+    expect(extractJson('```json\n{"a":1}\n```')).toEqual({ a: 1 });
+    expect(extractJson('Here you go: {"a":2} hope that helps')).toEqual({ a: 2 });
+    expect(() => extractJson('no json here')).toThrow(ScanError);
+  });
+
+  it('base64-encodes photo bytes', () => {
+    expect(bytesToBase64(new TextEncoder().encode('hi'))).toBe('aGk=');
+  });
+});
+
+type Call = { url: string; body: Record<string, unknown> };
+function fakeGoogle(replies: { status: number; json?: unknown }[]) {
+  const calls: Call[] = [];
+  const fetchImpl = async (url: string, init: { body: string }) => {
+    calls.push({ url, body: JSON.parse(init.body) });
+    const r = replies[Math.min(calls.length - 1, replies.length - 1)];
+    return { ok: r.status < 300, status: r.status, json: async () => r.json, text: async () => JSON.stringify(r.json) };
+  };
+  return { calls, fetchImpl };
+}
+
+const opts = { apiKey: 'k', model: 'gemini-3.8-flash', imageBase64: 'aGk=', mimeType: 'image/jpeg' };
+const interactionReply = (text: string) => ({ steps: [{ type: 'model_output', content: [{ type: 'text', text }] }] });
+
+describe('readWithGemini', () => {
+  it('uses Google’s current API and reads the model output', async () => {
+    const google = fakeGoogle([{ status: 200, json: interactionReply(JSON.stringify(receiptJson)) }]);
+    const r = await scanReceipt({ ...opts, fetchImpl: google.fetchImpl });
+    expect(r.total_cents).toBe(4140);
+    expect(google.calls).toHaveLength(1);
+    expect(google.calls[0].url).toMatch(/\/v1beta\/interactions$/);
+    expect(google.calls[0].body).toMatchObject({ model: 'gemini-3.8-flash', store: false });
+  });
+
+  it('falls back to simpler requests when Google refuses the request shape', async () => {
+    const google = fakeGoogle([
+      { status: 400, json: { error: 'unknown field response_format' } },
+      { status: 404, json: {} },
+      { status: 200, json: { candidates: [{ content: { parts: [{ text: JSON.stringify(receiptJson) }] } }] } },
+    ]);
+    const r = await scanReceipt({ ...opts, fetchImpl: google.fetchImpl });
+    expect(r.items).toHaveLength(3);
+    expect(google.calls.map((c) => c.url)).toEqual([
+      expect.stringMatching(/interactions$/),
+      expect.stringMatching(/interactions$/),
+      expect.stringMatching(/models\/gemini-3\.8-flash:generateContent$/),
+    ]);
+    expect(google.calls[1].body).not.toHaveProperty('response_format');
+  });
+
+  it('explains the free-tier limit instead of failing silently', async () => {
+    const google = fakeGoogle([{ status: 429 }]);
+    await expect(readWithGemini({ ...opts, fetchImpl: google.fetchImpl })).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+  });
+
+  it('stops on real errors like a bad API key', async () => {
+    const google = fakeGoogle([{ status: 403, json: { error: 'API key not valid' } }]);
+    await expect(readWithGemini({ ...opts, fetchImpl: google.fetchImpl })).rejects.toMatchObject({
+      code: 'READER_FAILED',
+      message: expect.stringContaining('status 403'),
+    });
+    expect(google.calls).toHaveLength(1);
+  });
+});

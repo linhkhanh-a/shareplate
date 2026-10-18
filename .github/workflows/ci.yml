@@ -19,8 +19,10 @@ jobs:
         run: npm run typecheck
       - name: Lint
         run: npm run lint
-      - name: Tests (money engine + database schema)
+      - name: Tests (money engine, database schema, receipt reader)
         run: npm test
+      - name: Type-check the edge functions (Deno)
+        run: npx -y deno@2 check supabase/functions/scan-receipt/index.ts
       - name: Build the website
         run: npm run build:web
         env:

@@ -92,12 +92,25 @@ describe('tripMoney', () => {
     vendor: null,
     category: 'Food',
     split_mode: 'exact',
+    subtotal_cents: shares.reduce((a, [, c]) => a + c, 0),
+    discount_cents: 0,
+    tax_cents: 0,
+    tip_cents: 0,
     total_cents: shares.reduce((a, [, c]) => a + c, 0),
     bill_date: '2026-10-17',
+    bill_image_path: null,
     paid_by_member_id: payer,
     version: 1,
     created_at: '',
-    shares: shares.map(([group_member_id, amount_cents]) => ({ group_member_id, amount_cents, share_input: amount_cents })),
+    shares: shares.map(([group_member_id, amount_cents]) => ({
+      group_member_id,
+      amount_cents,
+      share_input: amount_cents,
+      items_cents: amount_cents,
+      discount_cents: 0,
+      tax_cents: 0,
+      tip_cents: 0,
+    })),
   });
 
   it('turns bills and payments into balances and a Settle Up plan', () => {

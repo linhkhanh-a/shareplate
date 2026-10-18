@@ -177,18 +177,25 @@ function MoneySummary({
       </ThemedText>
       <View style={styles.summaryButtons}>
         <Button
-          label="Add bill"
-          onPress={() => router.push({ pathname: '/trips/[id]/bill', params: { id: tripId } })}
-          style={{ ...styles.grow, backgroundColor: theme.accent, borderColor: theme.accent }}
+          label="Scan receipt"
+          onPress={() => router.push({ pathname: '/trips/[id]/scan', params: { id: tripId } })}
+          style={{ ...styles.summaryButton, backgroundColor: theme.accent, borderColor: theme.accent }}
           textColor={theme.onAccent}
         />
         <Button
-          label="Settle up"
+          label="Add bill"
           variant="secondary"
-          onPress={() => router.push({ pathname: '/trips/[id]/settle', params: { id: tripId } })}
-          style={styles.grow}
+          onPress={() => router.push({ pathname: '/trips/[id]/bill', params: { id: tripId } })}
+          style={styles.summaryButton}
         />
       </View>
+      <Button
+        label="Settle up"
+        variant="secondary"
+        onPress={() => router.push({ pathname: '/trips/[id]/settle', params: { id: tripId } })}
+        style={styles.settleButton}
+        textColor={theme.onPrimary}
+      />
     </View>
   );
 }
@@ -211,7 +218,12 @@ function BillRow({
     <Pressable
       accessibilityRole="button"
       accessibilityHint="Opens the bill to view or edit it"
-      onPress={() => router.push({ pathname: '/trips/[id]/bill', params: { id: tripId, billId: bill.id } })}
+      onPress={() =>
+        router.push({
+          pathname: bill.split_mode === 'itemized' ? '/trips/[id]/scan' : '/trips/[id]/bill',
+          params: { id: tripId, billId: bill.id },
+        })
+      }
       style={({ pressed }) => [
         styles.billRow,
         { backgroundColor: pressed ? theme.surfaceMuted : theme.surface, borderColor: theme.border },
@@ -500,6 +512,8 @@ const styles = StyleSheet.create({
   summary: { borderRadius: Radius.medium, padding: Spacing.four, gap: Spacing.one },
   summaryAmount: { fontVariant: ['tabular-nums'] },
   summaryButtons: { flexDirection: 'row', gap: Spacing.two, marginTop: Spacing.three },
+  summaryButton: { flexGrow: 1, flexBasis: 0, paddingHorizontal: Spacing.two },
+  settleButton: { marginTop: Spacing.two, backgroundColor: 'transparent', borderColor: 'rgba(255,255,255,0.6)' },
   billRow: {
     flexDirection: 'row',
     alignItems: 'center',
