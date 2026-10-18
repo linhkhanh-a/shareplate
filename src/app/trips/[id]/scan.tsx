@@ -425,7 +425,7 @@ function ScanWizard({
       ) : null}
 
       {step !== 'photo' ? (
-        <Stepper current={step} reachable={reachable} done={done} onGo={goTo} />
+        <Stepper current={step} reachable={reachable} done={done} furthest={furthest} onGo={goTo} />
       ) : null}
 
       {step !== 'photo' && photoUri ? <ReceiptPhoto uri={photoUri} size={photoSize} onSize={setPhotoSize} /> : null}
@@ -559,62 +559,72 @@ function PhotoStep({
 }
 
 /**
- * 1 Items → 2 Totals → 3 People, one after another. Finished steps show a
- * check and can be revisited; a step opens once the ones before it are done.
+ * 1 Items → 2 Totals → 3 People, one after another. Green marks only where
+ * you are and the steps you've finished; lines run between the circles and
+ * turn green once both ends are. A step opens once the ones before it are done.
  */
 function Stepper({
   current,
   reachable,
   done,
+  furthest,
   onGo,
 }: {
   current: Step;
   reachable: Record<Exclude<Step, 'photo'>, boolean>;
   done: Record<Exclude<Step, 'photo'>, boolean>;
+  /** Index of the furthest step visited so far. */
+  furthest: number;
   onGo: (step: Step) => void;
 }) {
   const theme = useTheme();
+  // Finished means done and already gone through, never a step you haven't reached.
+  const state = STEPS.map((s, i) => {
+    const key = s.step as Exclude<Step, 'photo'>;
+    const isCurrent = current === s.step;
+    const finished = !isCurrent && done[key] && i <= furthest;
+    return { isCurrent, finished, green: isCurrent || finished, open: reachable[key] };
+  });
+  const line = (green: boolean) => [styles.stepLine, { backgroundColor: green ? theme.primary : theme.border }];
   return (
     <View accessibilityRole="list" accessibilityLabel="Steps" style={styles.stepper}>
       {STEPS.map((s, i) => {
-        const key = s.step as Exclude<Step, 'photo'>;
-        const isCurrent = current === s.step;
-        const open = reachable[key];
-        const finished = done[key] && !isCurrent;
-        const filled = isCurrent || finished;
+        const { isCurrent, finished, green, open } = state[i];
         return (
-          <View key={s.step} style={styles.stepCell}>
-            {i > 0 ? <View style={[styles.stepLine, { backgroundColor: open ? theme.primary : theme.border }]} /> : null}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Step ${i + 1} of 3: ${s.label}${finished ? ', done' : ''}${isCurrent ? ', current step' : ''}${open ? '' : ', locked until the steps before it are done'}`}
-              accessibilityState={{ disabled: !open, selected: isCurrent }}
-              aria-disabled={!open}
-              aria-current={isCurrent ? 'step' : undefined}
-              onPress={() => onGo(s.step)}
-              style={styles.stepButton}>
+          <Pressable
+            key={s.step}
+            accessibilityRole="button"
+            accessibilityLabel={`Step ${i + 1} of 3: ${s.label}${finished ? ', done' : ''}${isCurrent ? ', current step' : ''}${open ? '' : ', locked until the steps before it are done'}`}
+            accessibilityState={{ disabled: !open, selected: isCurrent }}
+            aria-current={isCurrent ? 'step' : undefined}
+            onPress={() => onGo(s.step)}
+            style={styles.stepCell}>
+            <View style={styles.stepTrack}>
+              {/* Each half-line stops at the circle's edge. */}
+              <View style={i === 0 ? styles.stepLineSpace : line(green && state[i - 1].green)} />
               <View
                 style={[
                   styles.stepDot,
                   {
-                    backgroundColor: filled ? theme.primary : theme.surface,
-                    borderColor: filled ? theme.primary : open ? theme.text : theme.border,
+                    backgroundColor: green ? theme.primary : theme.surface,
+                    borderColor: green ? theme.primary : open ? theme.textSecondary : theme.border,
                   },
                 ]}>
-                <ThemedText type="strong" style={{ color: filled ? theme.onPrimary : open ? theme.text : theme.textSecondary }}>
+                <ThemedText type="strong" style={{ color: green ? theme.onPrimary : open ? theme.text : theme.textSecondary }}>
                   {finished ? '✓' : String(i + 1)}
                 </ThemedText>
               </View>
-              <ThemedText
-                type="small"
-                style={{
-                  color: open ? theme.text : theme.textSecondary,
-                  fontFamily: isCurrent ? Fonts.semibold : Fonts.regular,
-                }}>
-                {s.tab}
-              </ThemedText>
-            </Pressable>
-          </View>
+              <View style={i === STEPS.length - 1 ? styles.stepLineSpace : line(green && state[i + 1].green)} />
+            </View>
+            <ThemedText
+              type="small"
+              style={{
+                color: green ? theme.text : theme.textSecondary,
+                fontFamily: isCurrent ? Fonts.semibold : Fonts.regular,
+              }}>
+              {s.tab}
+            </ThemedText>
+          </Pressable>
         );
       })}
     </View>
@@ -1107,11 +1117,10 @@ const styles = StyleSheet.create({
   },
   remove: { width: 32, height: 44, alignItems: 'center', justifyContent: 'center' },
   stepper: { flexDirection: 'row', alignItems: 'flex-start' },
-  stepCell: { flex: 1, alignItems: 'center' },
-  // The line joining a step to the one before it, behind the circles.
-  stepLine: { position: 'absolute', top: 17, right: '50%', width: '100%', height: 2, zIndex: -1 },
-  // Above the joining line, so the line runs behind the circles.
-  stepButton: { alignItems: 'center', gap: Spacing.one, paddingHorizontal: Spacing.one, minHeight: 44, zIndex: 1 },
+  stepCell: { flex: 1, alignItems: 'center', gap: Spacing.one, minHeight: 44 },
+  stepTrack: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
+  stepLine: { flex: 1, height: 2 },
+  stepLineSpace: { flex: 1 },
   stepDot: { width: 36, height: 36, borderRadius: 18, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   dimmed: { opacity: 0.55 },
   photoBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
