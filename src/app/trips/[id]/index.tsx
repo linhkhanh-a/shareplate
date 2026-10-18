@@ -96,6 +96,19 @@ export default function TripScreen() {
 
       <BudgetTeaser tripId={id} />
 
+      <Section title="Share">
+        <ThemedText type="small" themeColor="textSecondary">
+          {quick
+            ? 'Send each guest their total, or share the whole summary.'
+            : 'Send the summary to your group chat, or download a spreadsheet.'}
+        </ThemedText>
+        <Button
+          variant="secondary"
+          label="Share and export"
+          onPress={() => router.push({ pathname: '/trips/[id]/share', params: { id } })}
+        />
+      </Section>
+
       <Section title="Bills">
         {bills.isPending ? <Loading /> : null}
         {bills.isError ? <Notice tone="error">{friendlyError(bills.error)}</Notice> : null}

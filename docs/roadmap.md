@@ -68,11 +68,12 @@ link once hosting is set up, and a "try this" checklist.
 - [x] Budget section on the trip screen
 - [x] Works without trip dates (spending by date) and without a budget
 
-## Phase 8: Quick-split and export
-- [ ] Guest-only quick-split mode for a host
-- [ ] Shareable summary card (image or text) for iMessage or WhatsApp
-- [ ] CSV and Excel export
-- [ ] Google Sheets export (optional)
+## Phase 8: Quick-split and export ✅
+- [x] Quick split: add everyone by name while creating it; guests don't need the app
+- [x] Summary card to share as an image, or the whole summary as text, for iMessage or WhatsApp
+- [x] A personal message for each person: their share, who to pay, and the Zelle info
+- [x] Excel export (bills with everyone's share, scanned items, people, settle up, payments) and CSV of bills
+- [ ] Google Sheets export: skipped for now; Google Sheets imports the Excel file (see decision 44)
 
 ## Phase 9: Polish and launch
 - [ ] Leave-trip and delete-account flows (already enforced by the database)

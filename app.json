@@ -41,7 +41,8 @@
           "cameraPermission": "Shareplate uses the camera to scan receipts.",
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,

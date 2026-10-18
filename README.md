@@ -19,8 +19,8 @@ One codebase runs on **iPhone, iPad, and the web**.
 | 5 | Receipt scanner | ✅ Done |
 | 6 | Itinerary planner and pinning bills | Done |
 | 7 | Budget dashboard | Done |
-| 8 | Quick-split mode, share card, spreadsheet export | Next |
-| 9 | Polish and launch | |
+| 8 | Quick-split mode, share card, spreadsheet export | Done |
+| 9 | Polish and launch | Next |
 
 The full plan is in [docs/roadmap.md](docs/roadmap.md), and the reasoning behind
 each choice is in [docs/decisions.md](docs/decisions.md).
