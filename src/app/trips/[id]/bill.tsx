@@ -1,4 +1,4 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
@@ -74,6 +74,10 @@ export default function BillScreen() {
         <Notice tone="error">{friendlyError(members.error ?? bills.error)}</Notice>
       </Screen>
     );
+  }
+  if (existing?.split_mode === 'itemized') {
+    // Scanned bills are edited item by item in the scan screen.
+    return <Redirect href={{ pathname: '/trips/[id]/scan', params: { id: tripId, billId: existing.id } }} />;
   }
   if (billId && !existing) {
     return (

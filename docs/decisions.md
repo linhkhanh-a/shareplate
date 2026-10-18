@@ -182,3 +182,32 @@ If someone saves a bill while you have it open, the editor says so and offers
 "Load latest version". Your unsaved edits stay on screen until you choose,
 and the database refuses to overwrite their version either way.
 
+## 30. Receipts are read by Gemini's free tier, behind one small function
+
+The `scan-receipt` edge function sends the photo to Google Gemini
+(`gemini-3.8-flash` by default, changeable with the `GEMINI_MODEL` secret). It
+tries Google's current Interactions API first and falls back to the older
+generateContent API if the request shape is refused, so a change on Google's
+side doesn't break scanning. Switching to another provider later only touches
+`supabase/functions/scan-receipt/core.ts`.
+
+## 31. The reader's answer is a draft, never the truth
+
+Whatever the reader returns lands in an editable form with the photo on top.
+Totals that don't match what the receipt printed are flagged, but the person
+decides. The money engine does all the splitting; the database checks it adds up.
+
+## 32. Receipt photos are shrunk and private
+
+Photos are resized to at most 1600px and saved as JPEG before upload (usually
+under 200 KB). They live in a private Supabase Storage bucket under the trip's
+id, and storage rules let only that trip's members upload, view or delete them.
+Deleting a bill deletes its photo.
+
+## 33. The receipt reader checks who's calling
+
+The function verifies the caller's sign-in itself (this works with both old and
+new Supabase key formats) and downloads the photo with the caller's own
+permissions, so storage rules decide whether they may read it. The Gemini key
+never leaves Supabase.
+

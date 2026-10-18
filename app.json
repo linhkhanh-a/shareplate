@@ -33,6 +33,14 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Shareplate uses your photos so you can scan a receipt you already took.",
+          "cameraPermission": "Shareplate uses the camera to scan receipts.",
+          "microphonePermission": false
+        }
       ]
     ],
     "experiments": {
