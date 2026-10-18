@@ -1,9 +1,10 @@
 import { Image } from 'expo-image';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { BillEndActions, returnToTrip } from '@/components/bill-end-actions';
 import { FormerOnBillNotice } from '@/components/former-on-bill';
 import { PlanPicker } from '@/components/plan-picker';
 import { TopBar } from '@/components/top-bar';
@@ -12,6 +13,7 @@ import { Fonts, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { friendlyError } from '@/lib/errors';
+import { confirmAction } from '@/lib/platform';
 import { CATEGORIES, friendlyDate, isValidIsoDate, todayIso } from '@/lib/ledger';
 import { useTripLive } from '@/lib/live';
 import { pickReceiptPhoto } from '@/lib/photo';
@@ -50,11 +52,6 @@ const STEPS: { step: Step; label: string }[] = [
   { step: 'totals', label: 'Check the totals' },
   { step: 'people', label: 'Who had what' },
 ];
-
-function returnToTrip(tripId: string) {
-  if (router.canGoBack()) router.back();
-  else router.replace({ pathname: '/trips/[id]', params: { id: tripId } });
-}
 
 export default function ScanScreen() {
   const { id: tripId, billId, pin } = useLocalSearchParams<{ id: string; billId?: string; pin?: string }>();
@@ -315,6 +312,15 @@ function ScanWizard({
       {step === 'people' ? (
         <PeopleStep draft={draft} check={check} people={people} nameOf={nameOf} updateItem={updateItem} />
       ) : null}
+
+      {step !== 'photo' ? (
+        <BillEndActions
+          tripId={tripId}
+          existing={existing}
+          former={existing ? formerOnBill(members, existing) : []}
+          dirty={!!draft.imagePath || draft.items.some((i) => i.name.trim() || i.price.trim())}
+        />
+      ) : null}
     </Screen>
   );
 }
@@ -444,7 +450,18 @@ function ItemsStep({
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`Remove ${item.name || `item ${index + 1}`}`}
-                onPress={() => update({ items: draft.items.filter((i) => i.key !== item.key) })}
+                onPress={async () => {
+                  // Empty rows go right away; rows with something typed ask first.
+                  if (item.name.trim() || item.price.trim()) {
+                    const ok = await confirmAction(
+                      `Remove ${item.name.trim() || `item ${index + 1}`}?`,
+                      'It comes off this bill. You can type it in again if you need it.',
+                      'Remove item',
+                    );
+                    if (!ok) return;
+                  }
+                  update({ items: draft.items.filter((i) => i.key !== item.key) });
+                }}
                 hitSlop={6}
                 style={styles.remove}>
                 <ThemedText themeColor="textSecondary" style={styles.removeText}>

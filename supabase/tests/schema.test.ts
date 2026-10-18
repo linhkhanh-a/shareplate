@@ -1162,3 +1162,26 @@ describe('removing payments', () => {
     ).rejects.toThrow(/permission denied/);
   });
 });
+
+describe('guest Zelle info', () => {
+  it('lets admins record Zelle info for a guest, and keeps it off people with accounts', async () => {
+    const { anId, guestId } = await createTrip();
+    await asUser(LINH, (tx) => tx.query(`update group_members set zelle_identifier = '  minh@example.com ' where id = $1`, [guestId]));
+    await asUser(LINH, (tx) => tx.query(`update group_members set zelle_identifier = 'an@example.com' where id = $1`, [anId]));
+    const rows = await asUser(LINH, (tx) =>
+      tx.query<{ id: string; zelle_identifier: string | null }>(`select id, zelle_identifier from group_members where id in ($1, $2)`, [
+        guestId,
+        anId,
+      ]),
+    );
+    const byId = Object.fromEntries(rows.rows.map((r) => [r.id, r.zelle_identifier]));
+    expect(byId[guestId]).toBe('minh@example.com');
+    expect(byId[anId]).toBeNull();
+
+    // Members who aren't admins can't change it.
+    const changed = await asUser(AN, async (tx) =>
+      (await tx.query(`update group_members set zelle_identifier = 'x' where id = $1 returning id`, [guestId])).rows.length,
+    );
+    expect(changed).toBe(0);
+  });
+});

@@ -10,8 +10,8 @@ import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { friendlyError } from '@/lib/errors';
 import { describeEvent, timeAgo } from '@/lib/activity';
-import { friendlyDate, tripMoney } from '@/lib/ledger';
-import { canRemovePayment, formerWithBalance } from '@/lib/people';
+import { friendlyDate, todayIso, tripMoney } from '@/lib/ledger';
+import { canRemovePayment, formerWithBalance, settleTiming, zelleOf } from '@/lib/people';
 import { confirmAction, copyText } from '@/lib/platform';
 import {
   useBills,
@@ -21,6 +21,7 @@ import {
   usePayments,
   useRecordPayment,
   useRemovedPayments,
+  useTrip,
   type Member,
   type Payment,
 } from '@/lib/queries';
@@ -32,6 +33,7 @@ export default function SettleScreen() {
   const members = useMembers(tripId);
   const bills = useBills(tripId);
   const payments = usePayments(tripId);
+  const trip = useTrip(tripId);
   const removed = useRemovedPayments(tripId);
   // Kept here rather than in each row: the row disappears while removing, and
   // if the database refuses, the reason still needs somewhere to show.
@@ -58,6 +60,7 @@ export default function SettleScreen() {
   const left = (id: string) => !!byId.get(id)?.left_at;
   // Only trips from before former members were locked at $0 can have these.
   const stranded = formerWithBalance(all, money.balances);
+  const timing = settleTiming(trip.data?.end_date ?? null, todayIso());
 
   // Your own payments first, then the rest.
   const transfers = [...money.transfers].sort(
@@ -75,6 +78,20 @@ export default function SettleScreen() {
           The fewest payments that get everyone back to $0.00.
         </ThemedText>
       </View>
+
+      {timing === 'during' && transfers.length > 0 ? (
+        <Notice>
+          <ThemedText type="strong">The trip isn&apos;t over yet</ThemedText>
+          <ThemedText type="small">
+            Amounts change as bills are added. Settling now is fine: any later bills just add new, smaller payments.
+          </ThemedText>
+        </Notice>
+      ) : timing === 'over' && transfers.length > 0 ? (
+        <Notice tone="success">
+          <ThemedText type="strong">The trip&apos;s over, time to settle up</ThemedText>
+          <ThemedText type="small">Here are the fewest payments that clear everything.</ThemedText>
+        </Notice>
+      ) : null}
 
       {stranded.length > 0 ? (
         <StrandedNotice tripId={tripId} people={stranded} canManage={isAdmin} />
@@ -192,7 +209,7 @@ function TransferCard({
   const theme = useTheme();
   const record = useRecordPayment(tripId);
   const [copied, setCopied] = useState(false);
-  const zelle = recipient?.profile?.zelle_identifier;
+  const zelle = zelleOf(recipient);
   const verb = fromName === 'You' ? 'pay' : 'pays';
 
   async function onPaid() {
@@ -250,7 +267,7 @@ function TransferCard({
         <ThemedText type="small" themeColor="textSecondary">
           {recipient?.user_id
             ? `${toName} hasn't added Zelle info yet. Pay them however you usually do.`
-            : `${toName} is a guest, so pay them however you usually do.`}
+            : `${toName} is a guest with no Zelle info yet. A trip admin can add it under People, or pay them however you usually do.`}
         </ThemedText>
       )}
 

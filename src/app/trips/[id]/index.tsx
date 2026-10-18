@@ -16,7 +16,7 @@ import { leftOrOver } from '@/lib/budget';
 import { planDays } from '@/lib/itinerary';
 import { friendlyDate, tripMoney } from '@/lib/ledger';
 import { useTripLive } from '@/lib/live';
-import { peopleLine, removeMessage } from '@/lib/people';
+import { peopleLine, removeMessage, zelleOf } from '@/lib/people';
 import { describeEditors } from '@/lib/presence';
 import { confirmAction, shareLink, siteUrl } from '@/lib/platform';
 import {
@@ -37,6 +37,7 @@ import {
   useRemoveMember,
   useRenameTrip,
   useResetInvite,
+  useSetGuestZelle,
   useSetRole,
   useTrip,
   type Bill,
@@ -476,10 +477,13 @@ function MemberRow({
   const setRole = useSetRole(tripId);
   const remove = useRemoveMember(tripId);
   const isGuest = !member.user_id;
+  const zelle = zelleOf(member);
   const detail = isGuest
-    ? 'Guest, no account'
-    : member.profile?.zelle_identifier
-      ? `Zelle: ${member.profile.zelle_identifier}`
+    ? zelle
+      ? `Guest · Zelle: ${zelle}`
+      : 'Guest, no account'
+    : zelle
+      ? `Zelle: ${zelle}`
       : 'No Zelle info yet';
   // Admins manage everyone else; your own role changes (stepping down) also live here.
   const manageable = canManage && !(isMe && member.role !== 'admin');
@@ -527,12 +531,51 @@ function MemberRow({
               }
             />
           ) : null}
+          {isGuest ? <GuestZelle tripId={tripId} member={member} /> : null}
           {!isMe ? (
             <Button variant="danger" label="Remove from trip" loading={remove.isPending} onPress={onRemove} />
           ) : null}
           {error ? <Notice tone="error">{friendlyError(error)}</Notice> : null}
         </View>
       ) : null}
+    </View>
+  );
+}
+
+/** A guest has no account, so an admin can note where to send them money. */
+function GuestZelle({ tripId, member }: { tripId: string; member: Member }) {
+  const save = useSetGuestZelle(tripId);
+  const [value, setValue] = useState(member.zelle_identifier ?? '');
+  const [saved, setSaved] = useState(false);
+  const changed = value.trim() !== (member.zelle_identifier ?? '');
+
+  async function onSave() {
+    setSaved(false);
+    try {
+      await save.mutateAsync({ memberId: member.id, zelle: value.trim() || null });
+      setSaved(true);
+    } catch {
+      // Shown below.
+    }
+  }
+
+  return (
+    <View style={{ gap: Spacing.two }}>
+      <TextField
+        label={`${member.display_name}'s Zelle email or phone`}
+        hint="Optional. Shown when someone needs to pay them back."
+        value={value}
+        onChangeText={(v) => {
+          setValue(v);
+          setSaved(false);
+        }}
+        maxLength={254}
+        autoCapitalize="none"
+        keyboardType="email-address"
+      />
+      <Button variant="secondary" label="Save Zelle info" onPress={onSave} loading={save.isPending} disabled={!changed} />
+      {saved ? <Notice tone="success">Saved.</Notice> : null}
+      {save.isError ? <Notice tone="error">{friendlyError(save.error)}</Notice> : null}
     </View>
   );
 }

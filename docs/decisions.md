@@ -399,3 +399,20 @@ payment (enforced in the database), nobody edits one in place, and every
 removal is listed under "Removed payments" in Settle up with who did it.
 Deleting a bill or a payment no longer hides it from the screen before the
 database agrees, so a refusal is always explained.
+
+## 55. Settle anytime, with a nudge about timing
+
+Settling isn't limited to the end of the trip: some friends pay as they go,
+and the math already handles payments made before later bills. When the trip
+has dates, Settle up says "The trip isn't over yet…" until the last day, and
+"The trip's over, time to settle up" after it.
+
+## 56. Zelle info in every message, including for guests
+
+Messages say "Please send $8.00 to me by Zelle at …" when the money is owed to
+whoever sends the message, and use the person's whole name (a first word can
+be a family name). If people owe you and you haven't added Zelle, Share asks
+you to add it first. Guests have no account, so a trip admin can record a
+guest's Zelle email or phone on the trip (stored on their place in the trip,
+never on a profile). Every delete or remove now asks first, including scanned
+bills, which can now be deleted, and new bills, which can be discarded.

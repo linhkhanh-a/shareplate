@@ -57,6 +57,8 @@ export interface Member {
   /** Their own daily spending allowance for the trip, 0 when not set. */
   daily_allowance_cents: number;
   profile: { zelle_identifier: string | null } | null;
+  /** A guest's Zelle info, recorded by an admin (null for people with an account). */
+  zelle_identifier: string | null;
 }
 
 export interface InvitePreview {
@@ -256,7 +258,7 @@ export function useMembers(tripId: string) {
     queryFn: async (): Promise<Member[]> => {
       const { data, error } = await supabase
         .from('group_members')
-        .select('id, user_id, display_name, role, joined_at, left_at, daily_allowance_cents, profile:profiles(zelle_identifier)')
+        .select('id, user_id, display_name, role, joined_at, left_at, daily_allowance_cents, zelle_identifier, profile:profiles(zelle_identifier)')
         .eq('group_id', tripId)
         .order('joined_at');
       if (error) throw error;
@@ -307,6 +309,18 @@ export function useRemoveMember(tripId: string) {
         qc.invalidateQueries({ queryKey: keys.members(tripId) }),
         qc.invalidateQueries({ queryKey: keys.events(tripId) }),
       ]),
+  });
+}
+
+/** Records a guest's Zelle email or phone (admins only). */
+export function useSetGuestZelle(tripId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ memberId, zelle }: { memberId: string; zelle: string | null }) => {
+      const { error } = await supabase.from('group_members').update({ zelle_identifier: zelle }).eq('id', memberId);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.members(tripId) }),
   });
 }
 

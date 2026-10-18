@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { canRemovePayment, formerOnBill, formerWithBalance, peopleLine, removeMessage } from '@/lib/people';
+import { canRemovePayment, formerOnBill, formerWithBalance, peopleLine, removeMessage, settleTiming, zelleOf } from '@/lib/people';
 import type { Member, Payment } from '@/lib/queries';
 
 const member = (id: string, extra: Partial<Member> = {}): Member => ({
@@ -12,6 +12,7 @@ const member = (id: string, extra: Partial<Member> = {}): Member => ({
   left_at: null,
   daily_allowance_cents: 0,
   profile: null,
+  zelle_identifier: null,
   ...extra,
 });
 
@@ -59,6 +60,24 @@ describe('people who left', () => {
     expect(formerOnBill(members, { paid_by_member_id: '3', shares: [{ group_member_id: 'linh' }] })).toEqual([goneSettled]);
     expect(formerOnBill(members, { paid_by_member_id: 'linh', shares: [{ group_member_id: '2' }] })).toEqual([gone]);
     expect(formerOnBill(members, { paid_by_member_id: 'linh', shares: [{ group_member_id: 'linh' }] })).toEqual([]);
+  });
+});
+
+describe('Zelle info', () => {
+  it('comes from the profile for people with an account, and from the trip for guests', () => {
+    expect(zelleOf(member('an', { profile: { zelle_identifier: 'an@example.com' }, zelle_identifier: 'ignored' }))).toBe('an@example.com');
+    expect(zelleOf(member('minh', { user_id: null, zelle_identifier: '(614) 555-0100' }))).toBe('(614) 555-0100');
+    expect(zelleOf(member('an', { profile: { zelle_identifier: '' } }))).toBeNull();
+    expect(zelleOf(undefined)).toBeNull();
+  });
+});
+
+describe('when to settle', () => {
+  it('nudges during the trip and after it ends', () => {
+    expect(settleTiming(null, '2026-10-18')).toBeNull();
+    expect(settleTiming('2026-10-26', '2026-10-18')).toBe('during');
+    expect(settleTiming('2026-10-26', '2026-10-26')).toBe('during');
+    expect(settleTiming('2026-10-26', '2026-10-27')).toBe('over');
   });
 });
 

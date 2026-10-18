@@ -1,8 +1,9 @@
-import { Redirect, router, useLocalSearchParams } from 'expo-router';
+import { Redirect, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { BillEndActions, returnToTrip } from '@/components/bill-end-actions';
 import { FormerOnBillNotice } from '@/components/former-on-bill';
 import { PlanPicker } from '@/components/plan-picker';
 import { TopBar } from '@/components/top-bar';
@@ -34,18 +35,12 @@ import {
   type SplitRow,
 } from '@/lib/ledger';
 import { useTripLive } from '@/lib/live';
-import { confirmAction } from '@/lib/platform';
 import { formerOnBill } from '@/lib/people';
 import { describeEditors } from '@/lib/presence';
-import { useBills, useDeleteBill, useMembers, usePinBill, useSaveBill, type Bill, type Member } from '@/lib/queries';
+import { useBills, useMembers, usePinBill, useSaveBill, type Bill, type Member } from '@/lib/queries';
 import { formatCents } from '@/money';
 
 /** Back to the trip, even when the bill was opened directly from a link. */
-function returnToTrip(tripId: string) {
-  if (router.canGoBack()) router.back();
-  else router.replace({ pathname: '/trips/[id]', params: { id: tripId } });
-}
-
 const MODES: { value: ManualMode; label: string }[] = [
   { value: 'equal', label: 'Equally' },
   { value: 'percent', label: 'By percent' },
@@ -137,7 +132,6 @@ function BillForm({
   // People on this bill who have left the trip: their share is locked until they're brought back.
   const former = existing ? formerOnBill(members, existing) : [];
   const save = useSaveBill(tripId);
-  const del = useDeleteBill(tripId);
   const pin = usePinBill(tripId);
   const [activityId, setActivityId] = useState<string | null>(existing ? existing.itinerary_item_id : (pinTo ?? null));
   const editable = !existing || existing.split_mode !== 'itemized';
@@ -218,22 +212,6 @@ function BillForm({
       returnToTrip(tripId);
     } catch {
       // Shown below from pin.error; the bill itself is saved.
-    }
-  }
-
-  async function onDelete() {
-    if (!existing) return;
-    const ok = await confirmAction(
-      'Delete this bill?',
-      'Balances will update for everyone on it. This can’t be undone.',
-      'Delete bill',
-    );
-    if (!ok) return;
-    try {
-      await del.mutateAsync(existing.id);
-      returnToTrip(tripId);
-    } catch {
-      // Shown below.
     }
   }
 
@@ -394,25 +372,11 @@ function BillForm({
       </Section>
 
       {existing ? (
-        <View style={{ gap: Spacing.two }}>
-          <Button
-            label="Delete bill"
-            variant="danger"
-            onPress={onDelete}
-            loading={del.isPending}
-            disabled={former.length > 0}
-          />
-          {former.length > 0 ? (
-            <ThemedText type="small" themeColor="textSecondary">
-              To delete this bill, bring {former.map((m) => m.display_name).join(' and ')} back first.
-            </ThemedText>
-          ) : null}
-          {del.isError ? <Notice tone="error">{friendlyError(del.error)}</Notice> : null}
-          <ThemedText type="small" themeColor="textSecondary">
-            Paid by {nameOf(existing.paid_by_member_id)}. Changes update everyone&apos;s balances right away.
-          </ThemedText>
-        </View>
+        <ThemedText type="small" themeColor="textSecondary">
+          Paid by {nameOf(existing.paid_by_member_id)}. Changes update everyone&apos;s balances right away.
+        </ThemedText>
       ) : null}
+      <BillEndActions tripId={tripId} existing={existing} former={former} dirty={!!(title.trim() || amount.trim())} />
     </Screen>
   );
 }
