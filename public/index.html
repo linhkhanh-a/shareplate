@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Shareplate: split trip bills with friends</title>
+    <meta name="description" content="Split trip bills with friends. Scan receipts, plan the days, see your budget, and settle up with Zelle. Free, and works on any phone." />
+
+    <!-- Link previews in iMessage, WhatsApp, Messenger, Slack and others -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Shareplate" />
+    <meta property="og:title" content="Shareplate: split trip bills with friends" />
+    <meta property="og:description" content="Scan receipts, plan the days, and settle up with Zelle. Free, and works on any phone." />
+    <meta property="og:url" content="https://shareplate-app.vercel.app/" />
+    <meta property="og:image" content="https://shareplate-app.vercel.app/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Shareplate: a plate split three ways, with one share in saffron" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Add to home screen -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Shareplate" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F7F9F8" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0F1714" />
+
+    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
+    <style id="expo-reset">
+      html,
+      body {
+        height: 100%;
+        background-color: #f7f9f8;
+      }
+      @media (prefers-color-scheme: dark) {
+        html,
+        body {
+          background-color: #0f1714;
+        }
+      }
+      body {
+        overflow: hidden;
+      }
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+    </style>
+  </head>
+
+  <body>
+    <noscript>Shareplate needs JavaScript turned on.</noscript>
+    <div id="root"></div>
+  </body>
+</html>

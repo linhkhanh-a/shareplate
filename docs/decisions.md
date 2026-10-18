@@ -336,3 +336,33 @@ trip screen shows "What's new", marking what changed since your last visit,
 and the home screen shows "3 new" on each trip. When you last looked is kept in
 its own table, so opening a trip doesn't send a live update to everyone. Push
 notifications on iPhone can build on the same events once there's an iOS build.
+
+## 48. The icon: a plate split three ways
+
+Jade background, a light plate cut into three shares, one of them saffron:
+splitting, in the app's two colors. The same drawing makes the website icons,
+the Android adaptive icon (kept inside the safe zone), the splash screen and
+the link-preview image. The placeholder Expo icon and Expo-blue splash are gone.
+
+## 49. The website installs like an app, without offline caching
+
+A web manifest, icons and Apple's home-screen tags let people add Shareplate
+to their home screen, where it opens full screen. Android and desktop Chrome
+get an Install button; iPhone gets the Share, Add to Home Screen steps. There's
+deliberately no service worker: offline caching would make stale versions more
+likely, and the app needs the network for live trips anyway.
+
+## 50. Open pages offer the new version
+
+A page left open keeps running the version it loaded (this caught us after
+the scanner update). When the tab comes back into view, or every 10 minutes,
+the site checks whether a newer version has been published and shows "A new
+version of Shareplate is ready" with a Reload button.
+
+## 51. Link previews and headers
+
+`public/index.html` carries the page title, description and Open Graph tags,
+so links shared in iMessage, WhatsApp or Messenger show the app's card. Every
+page gets basic security headers (no framing by other sites, no content-type
+sniffing, a strict referrer policy, camera only for the site itself), and
+built files are cached for a year since their names change with each release.

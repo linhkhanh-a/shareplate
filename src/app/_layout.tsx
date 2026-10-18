@@ -10,9 +10,12 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 
+import { UpdateBanner } from '@/components/update-banner';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider, useAuth } from '@/lib/auth';
+// Listens for the browser's install offer from the start, before any screen asks.
+import '@/lib/install';
 import { useProfile } from '@/lib/queries';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -91,6 +94,7 @@ function RootNavigator() {
         <Stack.Screen name="join" />
         <Stack.Screen name="privacy" />
       </Stack>
+      <UpdateBanner />
     </ThemeProvider>
   );
 }

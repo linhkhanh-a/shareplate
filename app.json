@@ -8,12 +8,11 @@
     "scheme": "shareplate",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#1F6F5C",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
@@ -22,16 +21,23 @@
     },
     "web": {
       "output": "single",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "description": "Split trip bills with friends. Scan receipts, plan the days, settle up with Zelle.",
+      "themeColor": "#1F6F5C",
+      "backgroundColor": "#F7F9F8"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#1F6F5C",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 120,
+          "dark": {
+            "backgroundColor": "#0F1714",
+            "image": "./assets/images/splash-icon.png"
+          }
         }
       ],
       [

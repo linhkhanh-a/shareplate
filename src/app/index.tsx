@@ -2,6 +2,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { InstallHint } from '@/components/install-hint';
 import { ThemedText } from '@/components/themed-text';
 import { Avatar, Button, Loading, Notice, Pill, Screen } from '@/components/ui';
 import { Radius, Spacing } from '@/constants/theme';
@@ -52,6 +53,8 @@ export default function TripsScreen() {
       <View style={styles.list}>
         {trips.data?.map((t) => <TripRow key={t.trip.id} summary={t} unread={unread.data?.get(t.trip.id) ?? 0} />)}
       </View>
+
+      <InstallHint />
     </Screen>
   );
 }
