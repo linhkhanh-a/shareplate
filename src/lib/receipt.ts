@@ -1,8 +1,9 @@
-import type { ScanResult } from '../../supabase/functions/scan-receipt/core';
+import { looksLikeDiscount, type ScanResult } from '../../supabase/functions/scan-receipt/core';
 
 import { formatCents, MoneyError, parseCents, splitItemizedBill, type Cents, type ItemizedBillResult } from '@/money';
 
 export type { ScanResult };
+export { looksLikeDiscount };
 
 export interface DraftItem {
   key: string;
@@ -174,9 +175,19 @@ export function checkDraft(draft: ReceiptDraft): DraftCheck {
   if (total <= 0) return { ...empty, totalsMessage: 'The bill needs an amount above $0.00.' };
 
   const mismatches: string[] = [];
-  if (draft.printedSubtotalCents !== null && draft.printedSubtotalCents !== subtotal) {
+  const printed = draft.printedSubtotalCents;
+  // Stores print the subtotal either before or after discounts; either one counts as a match.
+  if (printed !== null && printed !== subtotal && printed !== subtotal - discount) {
+    const compare = subtotal - discount;
+    const diff = compare - printed;
+    // A discount read as an item is off twice when the receipt prints its subtotal after discounts.
+    const hint =
+      diff < 0
+        ? 'Look for a missed line or a misread price.'
+        : `Look for discount lines read as items (they'd add up to ${diff % 2 === 0 ? `${formatCents(diff / 2)} or ` : ''}${formatCents(diff)}), or a misread price.`;
     mismatches.push(
-      `Items add up to ${formatCents(subtotal)}, but the receipt's subtotal says ${formatCents(draft.printedSubtotalCents)}.`,
+      `Items come to ${formatCents(compare)}${discount > 0 ? ' after discounts' : ''}, ` +
+        `${formatCents(Math.abs(diff))} ${diff > 0 ? 'more' : 'less'} than the receipt's subtotal of ${formatCents(printed)}. ${hint}`,
     );
   }
   if (draft.printedTotalCents !== null && draft.printedTotalCents !== total) {
@@ -240,5 +251,18 @@ export function itemizedPayload(
       tip_cents: m.tipCents,
       amount_cents: m.totalCents,
     })),
+  };
+}
+
+/** Turns an item into part of the discount, for discount lines read as items. */
+export function moveItemToDiscount(draft: ReceiptDraft, key: string): ReceiptDraft {
+  const item = draft.items.find((i) => i.key === key);
+  if (!item) return draft;
+  const price = readAmount(item.price) ?? 0;
+  const current = readAmount(draft.discount) ?? 0;
+  return {
+    ...draft,
+    items: draft.items.filter((i) => i.key !== key),
+    discount: centsText(current + price),
   };
 }

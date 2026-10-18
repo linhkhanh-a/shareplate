@@ -32,6 +32,8 @@ import {
   draftFromScan,
   emptyDraft,
   itemizedPayload,
+  looksLikeDiscount,
+  moveItemToDiscount,
   newItemKey,
   type DraftItem,
   type ReceiptDraft,
@@ -265,6 +267,15 @@ function ScanWizard({
             </Notice>
           ) : null}
           <ItemsStep draft={draft} check={check} updateItem={updateItem} update={update} />
+          {check.mismatches.length > 0 ? (
+            <Notice>
+              {check.mismatches.map((m) => (
+                <ThemedText key={m} type="small">
+                  {m}
+                </ThemedText>
+              ))}
+            </Notice>
+          ) : null}
         </>
       ) : null}
 
@@ -416,6 +427,14 @@ function ItemsStep({
               <ThemedText type="small" themeColor="danger">
                 {check.itemErrors[item.key]}
               </ThemedText>
+            ) : null}
+            {looksLikeDiscount(item.name) ? (
+              <View style={styles.discountHint}>
+                <ThemedText type="small" themeColor="textSecondary" style={styles.grow}>
+                  This looks like a discount, not something you bought.
+                </ThemedText>
+                <Button variant="quiet" label="Move to discount" onPress={() => update(moveItemToDiscount(draft, item.key))} />
+              </View>
             ) : null}
           </View>
         ))}
@@ -693,6 +712,7 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   remove: { width: 32, height: 44, alignItems: 'center', justifyContent: 'center' },
+  discountHint: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   removeText: { fontSize: 24, lineHeight: 28 },
   totals: { borderWidth: 1, borderRadius: Radius.medium, padding: Spacing.three, gap: Spacing.three },
   totalField: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
