@@ -859,3 +859,148 @@ describe('budgets', () => {
   });
 });
 
+describe('deleting your account', () => {
+  const userExists = async (id: string) => (await db.query(`select 1 from auth.users where id = $1`, [id])).rows.length > 0;
+
+  it('lists what stops it, and refuses without changing anything', async () => {
+    const { groupId, linhId, anId } = await createTrip();
+    await saveEqualBill(LINH, groupId, linhId, [
+      [linhId, 1000],
+      [anId, 1000],
+    ]);
+    const blockers = await asUser(AN, (tx) =>
+      tx.query<{ trip_name: string; reason: string; amount_cents: string }>(`select * from account_deletion_blockers()`),
+    );
+    expect(blockers.rows.map((r) => [r.trip_name, r.reason, Number(r.amount_cents)])).toEqual([['Da Lat trip', 'balance', -1000]]);
+    await expect(asUser(AN, (tx) => tx.query(`select delete_my_account()`))).rejects.toThrow(/ACCOUNT_HAS_BALANCE: settle up in "Da Lat trip"/);
+    expect(await userExists(AN)).toBe(true);
+
+    // Linh is the only admin while An is still in the trip.
+    await expect(asUser(LINH, (tx) => tx.query(`select delete_my_account()`))).rejects.toThrow(/ACCOUNT_HAS_BALANCE|ACCOUNT_LAST_ADMIN/);
+  });
+
+  it('keeps shared trips and their history, removing only the person', async () => {
+    const { groupId, anId } = await createTrip();
+    await asUser(AN, (tx) => tx.query(`select delete_my_account()`));
+    expect(await userExists(AN)).toBe(false);
+    const row = await asUser(LINH, (tx) =>
+      tx.query<{ user_id: string | null; display_name: string; left_at: string | null }>(
+        `select user_id, display_name, left_at from group_members where id = $1 and group_id = $2`,
+        [anId, groupId],
+      ),
+    );
+    expect(row.rows[0]).toMatchObject({ user_id: null, display_name: 'An' });
+    expect(row.rows[0].left_at).not.toBeNull();
+  });
+
+  it('lets a trip creator leave once someone else is admin, and deletes trips only they could see', async () => {
+    const shared = await createTrip();
+    await asUser(LINH, (tx) => tx.query(`update group_members set role = 'admin' where id = $1`, [shared.anId]));
+    const solo = await asUser(LINH, async (tx) => {
+      const g = await tx.query<{ id: string }>(`insert into groups (name, mode) values ('Phở night', 'quick') returning id`);
+      await tx.query(`insert into group_members (group_id, display_name) values ($1, 'Tuấn')`, [g.rows[0].id]);
+      return g.rows[0].id;
+    });
+    await asUser(LINH, async (tx) => {
+      await tx.query(`insert into storage.objects (bucket_id, name) values ('receipts', $1)`, [`${shared.groupId}/r.jpg`]);
+      await tx.query(`select delete_my_account()`);
+    });
+    expect(await userExists(LINH)).toBe(false);
+    expect((await db.query(`select 1 from groups where id = $1`, [solo])).rows).toHaveLength(0);
+    const kept = await db.query<{ created_by: string | null }>(`select created_by from groups where id = $1`, [shared.groupId]);
+    expect(kept.rows[0].created_by).toBeNull();
+    const photo = await db.query<{ owner: string | null }>(`select owner from storage.objects where name = $1`, [
+      `${shared.groupId}/r.jpg`,
+    ]);
+    expect(photo.rows[0].owner).toBeNull();
+  });
+
+  it('is only for signed-in people deleting themselves', async () => {
+    await expect(asAnon((tx) => tx.query(`select delete_my_account()`))).rejects.toThrow(/permission denied/);
+  });
+});
+
+describe("what's new", () => {
+  const events = (userId: string, groupId: string) =>
+    asUser(userId, async (tx) => {
+      const r = await tx.query<{ kind: string; subject: string | null; amount_cents: string | null; actor: string | null }>(
+        `select e.kind, e.subject, e.amount_cents, m.display_name as actor
+         from trip_events e left join group_members m on m.id = e.actor_member_id
+         where e.group_id = $1 order by e.created_at, e.kind`,
+        [groupId],
+      );
+      return r.rows.map((x) => [x.kind, x.subject, x.amount_cents === null ? null : Number(x.amount_cents), x.actor]);
+    });
+  const unread = (userId: string) =>
+    asUser(userId, async (tx) => {
+      const r = await tx.query<{ group_id: string; unread: string }>(`select * from my_unread_counts()`);
+      return Object.fromEntries(r.rows.map((x) => [x.group_id, Number(x.unread)]));
+    });
+
+  it('records bills, edits, payments, people and plan changes, with who did it', async () => {
+    const { groupId, linhId, anId } = await createTrip();
+    const billId = await saveEqualBill(AN, groupId, anId, [
+      [linhId, 900],
+      [anId, 900],
+    ]);
+    await asUser(LINH, (tx) => tx.query(`update bills set title = 'Phở' where id = $1`, [billId]));
+    const activity = await asUser(AN, async (tx) => {
+      const a = await tx.query<{ id: string }>(
+        `insert into itinerary_items (group_id, day_number, title) values ($1, 1, 'Lake walk') returning id`,
+        [groupId],
+      );
+      // Pinning isn't an edit, so it isn't news.
+      await tx.query(`update bills set itinerary_item_id = $1 where id = $2`, [a.rows[0].id, billId]);
+      return a.rows[0].id;
+    });
+    await asUser(LINH, (tx) =>
+      tx.query(`insert into settlements (group_id, from_member_id, to_member_id, amount_cents) values ($1, $2, $3, 900)`, [
+        groupId,
+        linhId,
+        anId,
+      ]),
+    );
+    await asUser(AN, (tx) => tx.query(`delete from itinerary_items where id = $1`, [activity]));
+
+    const log = await events(LINH, groupId);
+    expect(log.filter(([k]) => !['member_joined', 'guest_added'].includes(k as string))).toEqual([
+      ['bill_added', 'Pho shop', 1800, 'An'],
+      ['bill_edited', 'Phở', 1800, 'Linh'],
+      ['activity_added', 'Lake walk', 0, 'An'],
+      ['payment_added', null, 900, 'Linh'],
+      ['activity_deleted', 'Lake walk', null, 'An'],
+    ]);
+    expect(log.filter(([k]) => k === 'guest_added')).toEqual([['guest_added', 'Minh (guest)', null, 'Linh']]);
+    expect(await events(OUTSIDER, groupId)).toEqual([]);
+  });
+
+  it('counts what changed since you last looked, not counting your own changes', async () => {
+    const { groupId, linhId, anId } = await createTrip();
+    await asUser(LINH, (tx) => tx.query(`insert into trip_reads (group_id) values ($1)`, [groupId]));
+    expect((await unread(LINH))[groupId]).toBe(0);
+
+    await new Promise((r) => setTimeout(r, 5));
+    await saveEqualBill(AN, groupId, anId, [[linhId, 500]]);
+    await saveEqualBill(LINH, groupId, linhId, [[anId, 500]]);
+    expect((await unread(LINH))[groupId]).toBe(1);
+
+    await new Promise((r) => setTimeout(r, 5));
+    await asUser(LINH, (tx) =>
+      tx.query(`insert into trip_reads (group_id, seen_at) values ($1, now()) on conflict (user_id, group_id) do update set seen_at = now()`, [
+        groupId,
+      ]),
+    );
+    expect((await unread(LINH))[groupId]).toBe(0);
+  });
+
+  it('keeps events and read marks private and read-only', async () => {
+    const { groupId } = await createTrip();
+    await expect(
+      asUser(LINH, (tx) => tx.query(`insert into trip_events (group_id, kind) values ($1, 'bill_added')`, [groupId])),
+    ).rejects.toThrow(/permission denied/);
+    await expect(asUser(OUTSIDER, (tx) => tx.query(`insert into trip_reads (group_id) values ($1)`, [groupId]))).rejects.toThrow(
+      /row-level security/,
+    );
+  });
+});
+

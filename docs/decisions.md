@@ -316,3 +316,23 @@ directly (File, Import), so that covers it without asking for more access.
 Sharing files and images on iPhone uses `expo-sharing`, `expo-file-system` and
 `react-native-view-shot`. They're Expo-supported, so they just need to be in the
 iOS build made in Phase 9.
+
+## 46. Deleting an account is one database step
+
+`delete_my_account` checks what blocks it (a balance or being the only admin in
+a trip shared with others), deletes trips nobody else signed in can see, hands
+the person's receipt photos to their trips, and removes the sign-in, all in
+one transaction, so it either fully happens or nothing changes. The app shows
+the blockers first (`account_deletion_blockers`). Trips no longer require
+their creator to exist. In shared trips the person stays as a former member so
+everyone's history and totals still add up, which the privacy page explains.
+
+## 47. Notifications start in the app
+
+The database writes a short event for each change worth knowing about (bills
+added, edited or deleted; payments; people joining, being added or leaving;
+plan activities added or removed). Moving or pinning things isn't news. The
+trip screen shows "What's new", marking what changed since your last visit,
+and the home screen shows "3 new" on each trip. When you last looked is kept in
+its own table, so opening a trip doesn't send a live update to everyone. Push
+notifications on iPhone can build on the same events once there's an iOS build.

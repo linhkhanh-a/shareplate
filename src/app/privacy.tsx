@@ -54,8 +54,11 @@ export default function PrivacyScreen() {
 
       <Block title="Leaving or deleting your data">
         <ThemedText>
-          You can leave a trip once your balance in it is settled. To delete your account and everything tied to it,
-          email linhkhanhtr.22@gmail.com.
+          You can leave a trip once your balance in it is settled. You can delete your account yourself from your
+          profile (tap your picture, then Delete your account). That removes your profile, Zelle info and sign-in,
+          and deletes trips only you can see. In trips you shared with others, your past bills and payments stay so
+          their totals still add up, shown under your name as a former member. For anything else, email
+          linhkhanhtr.22@gmail.com.
         </ThemedText>
       </Block>
     </Screen>

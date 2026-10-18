@@ -76,7 +76,10 @@ link once hosting is set up, and a "try this" checklist.
 - [ ] Google Sheets export: skipped for now; Google Sheets imports the Excel file (see decision 44)
 
 ## Phase 9: Polish and launch
-- [ ] Leave-trip and delete-account flows (already enforced by the database)
-- [ ] Notifications
-- [ ] End-to-end tests
-- [ ] Website launch, then TestFlight for iOS
+- [x] Delete your account from your profile (needed for the App Store), with clear reasons when it's blocked
+- [x] Leave trip (done in Phase 2)
+- [x] In-app notifications: "What's new" in each trip, "3 new" badges on your trips
+- [ ] Push notifications on iPhone (comes with the iOS build)
+- [ ] End-to-end tests in CI
+- [ ] Website launch polish (sharing previews, add to home screen)
+- [ ] iPhone app: build setup, Sign in with Apple, TestFlight
