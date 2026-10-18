@@ -43,6 +43,8 @@ export function friendlyError(error: unknown): string {
   if (message.includes('PERCENT_NOT_100')) return 'Percentages need to add up to 100%.';
   if (message.includes('NO_PARTICIPANTS')) return 'Choose who is splitting this bill.';
   if (message.includes('BAD_AMOUNT')) return 'The bill needs an amount above $0.00.';
+  if (message.includes('BAD_ALLOWANCE')) return 'Enter an allowance between $0 and $1,000,000 a day.';
+  if (message.includes('groups_total_budget_limit')) return 'Enter a budget under $100,000,000.';
   if (message.includes('LAST_ADMIN')) {
     return 'A trip always needs an admin. Make someone else an admin first.';
   }

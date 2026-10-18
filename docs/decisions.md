@@ -261,3 +261,26 @@ activity screen can pin existing bills or add a new one already pinned. The
 pin is saved right after the bill, so the money functions stay unchanged.
 Deleting an activity keeps its bills, just unpinned. Spent amounts are bill
 totals; per-person budgets come in Phase 7.
+
+## 39. Personal spending is your share, not what you paid
+
+Allowances compare each person's share of the bills (what they used) with
+their allowance. Who paid is a Settle Up question, not a budget one: if Linh
+pays for a $60 dinner for three, she spent $20 of her allowance, not $60.
+
+## 40. Budget charts are bullet bars, with the numbers written out
+
+Each row has one colored bar for what was spent and a thin tick for the target
+(the day's share of the trip budget, or the allowance). Past the target the
+bar turns the warning color, and the row says "$X over" in words, so it never
+relies on color alone (the jade and warning red are too close for some
+color-blind readers on their own). The trip budget is split into days with the
+same exact rounding as bills, so the days add up to the budget. Bills dated
+outside the trip's dates still count toward the total and are called out.
+
+## 41. People set their own allowance through one database function
+
+Regular members can't edit their member row (it holds their role), so
+`set_daily_allowance` lets anyone set their own allowance and admins set
+anyone's, such as a guest's. The trip budget stays an admin setting, like the
+trip's name and dates.

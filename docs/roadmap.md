@@ -60,9 +60,13 @@ link once hosting is set up, and a "try this" checklist.
 - [x] Planned vs. spent for each activity, each day and the whole trip; tap a pinned bill to open it
 - [x] Live updates and "Minh is editing" for the plan, like bills
 
-## Phase 7: Budget dashboard
-- [ ] Trip and per-person daily allowances
-- [ ] Planned vs. actual spending bars
+## Phase 7: Budget dashboard ✅
+- [x] Trip budget (admins), with spent, what's left and about how much a day
+- [x] Day-by-day spending against each day's share of the budget, with the plan's numbers alongside
+- [x] Personal daily allowances: set your own (admins can set anyone's, like a guest's)
+- [x] Your share per day against your allowance, and everyone's share against theirs
+- [x] Budget section on the trip screen
+- [x] Works without trip dates (spending by date) and without a budget
 
 ## Phase 8: Quick-split and export
 - [ ] Guest-only quick-split mode for a host

@@ -18,8 +18,8 @@ One codebase runs on **iPhone, iPad, and the web**.
 | 4 | Real-time sync between phones | ✅ Done |
 | 5 | Receipt scanner | ✅ Done |
 | 6 | Itinerary planner and pinning bills | Done |
-| 7 | Budget dashboard | Next |
-| 8 | Quick-split mode, share card, spreadsheet export | |
+| 7 | Budget dashboard | Done |
+| 8 | Quick-split mode, share card, spreadsheet export | Next |
 | 9 | Polish and launch | |
 
 The full plan is in [docs/roadmap.md](docs/roadmap.md), and the reasoning behind
