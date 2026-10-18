@@ -455,3 +455,18 @@ or "Oct 23" (US style, month first), and have a calendar button. Each trip
 can show its amounts in one currency with cents (USD, EUR, CHF…); it only
 changes the sign, nothing is converted. Currencies without cents (VND, JPY,
 KRW) need their own rounding and come later.
+
+## 61. Plan inputs: calendar, AM/PM, and free place search
+
+Dates in the plan use the same date box as bills: type "10/23", "Oct 23" or
+"tomorrow" (US style, month first), or open the calendar (the browser's own on
+the website, the phone's own in the app). Times are a clock box plus an
+AM | PM switch and a clock button; typing "7:30pm" or "19:30" sets the switch
+by itself, and a bare "9" guesses AM (7 to 11) or PM (12 to 6) until you
+choose. Places are searched with OpenStreetMap through our own `place-search`
+function (Photon first, Nominatim if Photon doesn't answer): free, no API key
+and no billing account, unlike Google's place search, which needs a card.
+Picking a result saves the name, address and exact coordinates, so "Open in
+Maps" lands on the spot; typing a name without picking still works. Results
+favor places near others already in the plan. Selected chips and switches now
+also tell screen readers they're selected on the website (`aria-checked`).

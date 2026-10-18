@@ -1234,3 +1234,31 @@ describe('bill entry', () => {
     );
   });
 });
+
+describe('places in the plan', () => {
+  it('saves a picked place with its address and coordinates, and refuses half a pair', async () => {
+    const { groupId } = await createTrip();
+    const id = await asUser(LINH, async (tx) =>
+      (
+        await tx.query<{ id: string }>(
+          `insert into itinerary_items (group_id, day_number, title, location, location_address, location_lat, location_lng)
+           values ($1, 1, 'Night market', 'Chợ Đêm Đà Lạt', 'Nguyễn Thị Minh Khai, Đà Lạt, Vietnam', 11.9429, 108.4372) returning id`,
+          [groupId],
+        )
+      ).rows[0].id,
+    );
+    expect(id).toBeTruthy();
+    await expect(
+      asUser(LINH, (tx) =>
+        tx.query(`insert into itinerary_items (group_id, day_number, title, location_lat) values ($1, 1, 'Half', 11.9)`, [groupId]),
+      ),
+    ).rejects.toThrow(/location_pair/);
+    await expect(
+      asUser(LINH, (tx) =>
+        tx.query(`insert into itinerary_items (group_id, day_number, title, location_lat, location_lng) values ($1, 1, 'Off', 95, 10)`, [
+          groupId,
+        ]),
+      ),
+    ).rejects.toThrow(/location_lat_check/);
+  });
+});

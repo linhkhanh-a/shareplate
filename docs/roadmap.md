@@ -83,5 +83,6 @@ link once hosting is set up, and a "try this" checklist.
 - [ ] End-to-end tests in CI
 - [x] People who left stay at $0.00, Bring back, and safer payment removal (decisions 53 and 54)
 - [x] Bill entry: one Add bill, blanks filled in, $ or % extras, rounding to the cent, trip days, scanner tabs and kept drafts, currency per trip (decisions 57 to 60)
+- [x] Plan inputs: calendar and smart dates, AM/PM times, free OpenStreetMap place search (decision 61)
 - [x] Website launch polish: app icon, link previews, add to home screen, "new version ready" banner, security headers
 - [ ] iPhone app: build setup, Sign in with Apple, TestFlight (waiting on an Apple Developer account)

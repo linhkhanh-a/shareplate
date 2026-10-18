@@ -355,6 +355,7 @@ function BillForm({
                 <Pressable
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: row.included }}
+                  aria-checked={row.included}
                   accessibilityLabel={`Include ${m.display_name}`}
                   disabled={!editable}
                   onPress={() => updateRow(m.id, { included: !row.included })}

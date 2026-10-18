@@ -418,3 +418,7 @@ enabled = true
 # and new Supabase key formats), so the gateway check is turned off.
 [functions.scan-receipt]
 verify_jwt = false
+
+# Checks the sign-in itself, like the receipt reader.
+[functions.place-search]
+verify_jwt = false
