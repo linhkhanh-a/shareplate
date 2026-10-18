@@ -282,26 +282,71 @@ function ScanWizard({
   }
 
   const stepIndex = STEPS.findIndex((s) => s.step === step);
+  // Steps go in order: a step opens once everything before it is filled in.
+  const itemsDone = check.itemsOk;
+  const totalsDone = itemsDone && !!check.totals && isValidIsoDate(draft.date);
+  // The furthest step reached so far: you can go back to any of them, or one step on.
+  const [furthest, setFurthest] = useState(existing ? 2 : 0);
+  const reachable: Record<Exclude<Step, 'photo'>, boolean> = {
+    items: true,
+    totals: itemsDone && furthest >= 0,
+    people: totalsDone && furthest >= 1,
+  };
+  const done: Record<Exclude<Step, 'photo'>, boolean> = { items: itemsDone, totals: totalsDone, people: !!check.result };
+  // What's still missing on this step, shown when someone tries to go on.
+  const blocker =
+    step === 'items'
+      ? itemsDone
+        ? null
+        : check.totalsMessage
+      : step === 'totals'
+        ? !check.totals
+          ? (check.totalsMessage ?? 'Check the totals.')
+          : !isValidIsoDate(draft.date)
+            ? 'Pick the date of the bill.'
+            : null
+        : null;
+  const [tried, setTried] = useState<Step | null>(null);
+  function goTo(next: Step) {
+    if (next === 'photo' || reachable[next]) {
+      setTried(null);
+      setStep(next);
+      const index = STEPS.findIndex((x) => x.step === next);
+      if (index > furthest) setFurthest(index);
+    } else {
+      setTried(step);
+    }
+  }
+  function goNext() {
+    if (blocker) {
+      setTried(step);
+      return;
+    }
+    goTo(STEPS[stepIndex + 1].step);
+  }
+
   const footer =
     step === 'photo' ? undefined : (
       <View style={styles.footer}>
+        {tried === step && blocker ? (
+          <Notice tone="error">
+            <ThemedText type="small" accessibilityLiveRegion="assertive">
+              {blocker}
+            </ThemedText>
+          </Notice>
+        ) : null}
         {step === 'people' && save.isError ? <Notice tone="error">{friendlyError(save.error)}</Notice> : null}
         {step === 'people' && pin.isError ? (
           <Notice tone="error">{`The bill is saved, but pinning it to the plan didn't work. ${friendlyError(pin.error)}`}</Notice>
         ) : null}
         <View style={styles.footerButtons}>
           {stepIndex > 0 ? (
-            <Button label="Back" variant="secondary" onPress={() => setStep(STEPS[stepIndex - 1].step)} />
+            <Button label="Back" variant="secondary" onPress={() => goTo(STEPS[stepIndex - 1].step)} />
           ) : null}
           {step === 'items' ? (
-            <Button label="Next: totals" onPress={() => setStep('totals')} disabled={!check.itemsOk} style={styles.grow} />
+            <Button label="Next: totals" onPress={goNext} style={itemsDone ? styles.grow : { ...styles.grow, ...styles.dimmed }} />
           ) : step === 'totals' ? (
-            <Button
-              label="Next: who had what"
-              onPress={() => setStep('people')}
-              disabled={!check.totals || !isValidIsoDate(draft.date)}
-              style={styles.grow}
-            />
+            <Button label="Next: who had what" onPress={goNext} style={totalsDone ? styles.grow : { ...styles.grow, ...styles.dimmed }} />
           ) : (
             <Button
               label={existing ? 'Save changes' : 'Add bill'}
@@ -358,6 +403,7 @@ function ScanWizard({
               onPress={() => {
                 setDraft(kept.value.draft);
                 setStep(kept.value.step);
+                setFurthest(Math.max(0, STEPS.findIndex((x) => x.step === kept.value.step)));
                 setActivityId(kept.value.activityId);
                 setKept(null);
               }}
@@ -379,11 +425,7 @@ function ScanWizard({
       ) : null}
 
       {step !== 'photo' ? (
-        <View accessibilityRole="tablist" style={styles.tabs}>
-          {STEPS.map((s, i) => (
-            <Chip key={s.step} label={`${i + 1} ${s.tab}`} selected={step === s.step} onPress={() => setStep(s.step)} />
-          ))}
-        </View>
+        <Stepper current={step} reachable={reachable} done={done} onGo={goTo} />
       ) : null}
 
       {step !== 'photo' && photoUri ? <ReceiptPhoto uri={photoUri} size={photoSize} onSize={setPhotoSize} /> : null}
@@ -432,7 +474,7 @@ function ScanWizard({
               ))}
             </Notice>
           ) : null}
-          <ItemsStep draft={draft} check={check} updateItem={updateItem} update={update} />
+          <ItemsStep draft={draft} check={check} updateItem={updateItem} update={update} showAllErrors={tried === 'items'} />
           {check.mismatches.length > 0 ? (
             <Notice>
               {check.mismatches.map((m) => (
@@ -516,6 +558,69 @@ function PhotoStep({
   );
 }
 
+/**
+ * 1 Items → 2 Totals → 3 People, one after another. Finished steps show a
+ * check and can be revisited; a step opens once the ones before it are done.
+ */
+function Stepper({
+  current,
+  reachable,
+  done,
+  onGo,
+}: {
+  current: Step;
+  reachable: Record<Exclude<Step, 'photo'>, boolean>;
+  done: Record<Exclude<Step, 'photo'>, boolean>;
+  onGo: (step: Step) => void;
+}) {
+  const theme = useTheme();
+  return (
+    <View accessibilityRole="list" accessibilityLabel="Steps" style={styles.stepper}>
+      {STEPS.map((s, i) => {
+        const key = s.step as Exclude<Step, 'photo'>;
+        const isCurrent = current === s.step;
+        const open = reachable[key];
+        const finished = done[key] && !isCurrent;
+        const filled = isCurrent || finished;
+        return (
+          <View key={s.step} style={styles.stepCell}>
+            {i > 0 ? <View style={[styles.stepLine, { backgroundColor: open ? theme.primary : theme.border }]} /> : null}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Step ${i + 1} of 3: ${s.label}${finished ? ', done' : ''}${isCurrent ? ', current step' : ''}${open ? '' : ', locked until the steps before it are done'}`}
+              accessibilityState={{ disabled: !open, selected: isCurrent }}
+              aria-disabled={!open}
+              aria-current={isCurrent ? 'step' : undefined}
+              onPress={() => onGo(s.step)}
+              style={styles.stepButton}>
+              <View
+                style={[
+                  styles.stepDot,
+                  {
+                    backgroundColor: filled ? theme.primary : theme.surface,
+                    borderColor: filled ? theme.primary : open ? theme.text : theme.border,
+                  },
+                ]}>
+                <ThemedText type="strong" style={{ color: filled ? theme.onPrimary : open ? theme.text : theme.textSecondary }}>
+                  {finished ? '✓' : String(i + 1)}
+                </ThemedText>
+              </View>
+              <ThemedText
+                type="small"
+                style={{
+                  color: open ? theme.text : theme.textSecondary,
+                  fontFamily: isCurrent ? Fonts.semibold : Fonts.regular,
+                }}>
+                {s.tab}
+              </ThemedText>
+            </Pressable>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 type PhotoSize = 'hidden' | 'small' | 'large';
 
 /** The receipt photo, on every step so the numbers can be compared as you go. */
@@ -587,11 +692,14 @@ function ItemsStep({
   check,
   updateItem,
   update,
+  showAllErrors,
 }: {
   draft: ReceiptDraft;
   check: ReturnType<typeof checkDraft>;
   updateItem: (key: string, changes: Partial<DraftItem>) => void;
   update: (changes: Partial<ReceiptDraft>) => void;
+  /** After trying to go on: point at empty rows too, not just half-typed ones. */
+  showAllErrors: boolean;
 }) {
   const theme = useTheme();
   return (
@@ -608,14 +716,23 @@ function ItemsStep({
                 placeholderTextColor={theme.textSecondary}
                 style={[
                   styles.itemName,
-                  { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface },
+                  {
+                    color: theme.text,
+                    // Red once you've tried to go on (or started typing) and it still needs a name.
+                    borderColor:
+                      !item.name.trim() && check.itemErrors[item.key] && (showAllErrors || item.price) ? theme.danger : theme.border,
+                    backgroundColor: theme.surface,
+                  },
                 ]}
               />
               <MoneyInput
                 label={`Item ${index + 1} price`}
                 value={item.price}
                 onChange={(price) => updateItem(item.key, { price })}
-                invalid={!!check.itemErrors[item.key] && check.itemErrors[item.key].includes('price')}
+                invalid={
+                  !!check.itemErrors[item.key] &&
+                  (check.itemErrors[item.key].includes('price') || (showAllErrors && !item.price.trim()))
+                }
               />
               <Pressable
                 accessibilityRole="button"
@@ -639,7 +756,7 @@ function ItemsStep({
                 </ThemedText>
               </Pressable>
             </View>
-            {check.itemErrors[item.key] && (item.name || item.price) ? (
+            {check.itemErrors[item.key] && (item.name || item.price || showAllErrors) ? (
               <ThemedText type="small" themeColor="danger">
                 {check.itemErrors[item.key]}
               </ThemedText>
@@ -989,7 +1106,14 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   remove: { width: 32, height: 44, alignItems: 'center', justifyContent: 'center' },
-  tabs: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
+  stepper: { flexDirection: 'row', alignItems: 'flex-start' },
+  stepCell: { flex: 1, alignItems: 'center' },
+  // The line joining a step to the one before it, behind the circles.
+  stepLine: { position: 'absolute', top: 17, right: '50%', width: '100%', height: 2, zIndex: -1 },
+  // Above the joining line, so the line runs behind the circles.
+  stepButton: { alignItems: 'center', gap: Spacing.one, paddingHorizontal: Spacing.one, minHeight: 44, zIndex: 1 },
+  stepDot: { width: 36, height: 36, borderRadius: 18, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  dimmed: { opacity: 0.55 },
   photoBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   modeSwitch: { width: 120 },
   discountHint: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },

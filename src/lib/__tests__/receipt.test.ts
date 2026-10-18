@@ -70,6 +70,19 @@ describe('scan wizard drafts', () => {
     expect(c.itemsOk).toBe(false);
     expect(c.itemErrors[d.items[1].key]).toMatch(/price/);
     expect(c.itemErrors[d.items[2].key]).toMatch(/name/);
+    expect(c.totalsMessage).toBe('Items 2, 3 still need a name and a price. Fill them in, or remove empty ones with ×.');
+  });
+
+  it('won’t move on while an item is left blank', () => {
+    const d = draftFromScan(scan, base);
+    d.items.push({ key: 'blank', name: '', price: '', memberIds: [] });
+    const c = checkDraft(d);
+    expect(c.itemsOk).toBe(false);
+    expect(c.itemErrors.blank).toBe('This item is empty. Fill it in, or remove it with ×.');
+    expect(c.totalsMessage).toBe('Item 4 is empty. Fill it in, or remove it with ×.');
+    const priceless = draftFromScan(scan, base);
+    priceless.items[0] = { ...priceless.items[0], price: '' };
+    expect(checkDraft(priceless).totalsMessage).toBe('Item 1: enter a price like 12.50.');
   });
 
   it('warns when the typed numbers disagree with the printed receipt', () => {
