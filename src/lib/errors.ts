@@ -48,6 +48,10 @@ export function friendlyError(error: unknown): string {
   if (message.includes('LAST_ADMIN')) {
     return 'A trip always needs an admin. Make someone else an admin first.';
   }
+  const balanceTrip = /ACCOUNT_HAS_BALANCE: settle up in "(.+)" first/.exec(message);
+  if (balanceTrip) return `Settle up in "${balanceTrip[1]}" first. Your balance there needs to be $0.00.`;
+  const adminTrip = /ACCOUNT_LAST_ADMIN: make someone else an admin of "(.+)" first/.exec(message);
+  if (adminTrip) return `Make someone else an admin of "${adminTrip[1]}" first, so the trip isn't left without one.`;
   if (message.includes('NOT_ADMIN')) return 'Only trip admins can do that.';
   if (message.includes('INVITE_INVALID')) {
     return 'This invite link has expired or was reset. Ask a trip admin for a new one.';

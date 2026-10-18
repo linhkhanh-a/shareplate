@@ -1,4 +1,5 @@
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -6,11 +7,19 @@ import { Avatar, Button, Loading, Notice, Pill, Screen } from '@/components/ui';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/errors';
-import { useProfile, useTrips, type TripSummary } from '@/lib/queries';
+import { useProfile, useTrips, useUnreadCounts, type TripSummary } from '@/lib/queries';
 
 export default function TripsScreen() {
   const profile = useProfile();
   const trips = useTrips();
+  const unread = useUnreadCounts();
+  const refetchUnread = unread.refetch;
+  // Coming back to this screen: check for news again.
+  useFocusEffect(
+    useCallback(() => {
+      void refetchUnread();
+    }, [refetchUnread]),
+  );
   const name = profile.data?.full_name || profile.data?.email || '';
 
   return (
@@ -41,18 +50,19 @@ export default function TripsScreen() {
       ) : null}
 
       <View style={styles.list}>
-        {trips.data?.map((t) => <TripRow key={t.trip.id} summary={t} />)}
+        {trips.data?.map((t) => <TripRow key={t.trip.id} summary={t} unread={unread.data?.get(t.trip.id) ?? 0} />)}
       </View>
     </Screen>
   );
 }
 
-function TripRow({ summary }: { summary: TripSummary }) {
+function TripRow({ summary, unread }: { summary: TripSummary; unread: number }) {
   const theme = useTheme();
   const { trip, role } = summary;
   return (
     <Pressable
       accessibilityRole="link"
+      accessibilityLabel={`${trip.name}${unread > 0 ? `, ${unread} new ${unread === 1 ? 'change' : 'changes'}` : ''}`}
       onPress={() => router.push({ pathname: '/trips/[id]', params: { id: trip.id } })}
       style={({ pressed }) => [
         styles.row,
@@ -67,6 +77,7 @@ function TripRow({ summary }: { summary: TripSummary }) {
           {trip.mode === 'quick' ? 'Quick split with guests' : 'Everyone signs in'}
         </ThemedText>
       </View>
+      {unread > 0 ? <Pill label={`${unread > 99 ? '99+' : unread} new`} tone="accent" /> : null}
       {role === 'admin' ? <Pill label="Admin" /> : null}
     </Pressable>
   );

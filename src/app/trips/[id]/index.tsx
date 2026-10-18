@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -7,10 +7,11 @@ import { BudgetBar } from '@/components/budget-bar';
 import { LiveBadge } from '@/components/live-badge';
 import { TopBar } from '@/components/top-bar';
 import { Avatar, Button, Divider, Loading, Notice, Pill, Screen, Section, TextField } from '@/components/ui';
-import { Radius, Spacing } from '@/constants/theme';
+import { Fonts, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { friendlyError } from '@/lib/errors';
+import { describeEvent, timeAgo, type TripEvent } from '@/lib/activity';
 import { leftOrOver } from '@/lib/budget';
 import { planDays } from '@/lib/itinerary';
 import { friendlyDate, tripMoney } from '@/lib/ledger';
@@ -25,6 +26,9 @@ import {
   useAddGuest,
   useDeleteTrip,
   useInviteToken,
+  useLastSeen,
+  useMarkSeen,
+  useTripEvents,
   useItinerary,
   useLeaveTrip,
   useMembers,
@@ -91,6 +95,8 @@ export default function TripScreen() {
       </View>
 
       <MoneySummary tripId={id} myMemberId={me?.id} memberIds={active.map((m) => m.id)} />
+
+      <WhatsNew tripId={id} me={me} names={names} />
 
       <PlanTeaser tripId={id} />
 
@@ -212,6 +218,66 @@ function MoneySummary({
         textColor={theme.onPrimary}
       />
     </View>
+  );
+}
+
+/** Recent changes by others, with the ones since your last visit marked. */
+function WhatsNew({ tripId, me, names }: { tripId: string; me?: Member; names: Map<string, string> }) {
+  const theme = useTheme();
+  const events = useTripEvents(tripId);
+  const lastSeen = useLastSeen(tripId);
+  const markSeen = useMarkSeen(tripId);
+  const [showAll, setShowAll] = useState(false);
+  const marked = useRef(false);
+
+  // Once we know when you last looked, remember it for this visit and mark the trip as seen.
+  const since = lastSeen.isSuccess ? (lastSeen.data ?? me?.joined_at ?? null) : null;
+  const ready = lastSeen.isSuccess && !!me;
+  const mark = markSeen.mutate;
+  useEffect(() => {
+    if (!ready || marked.current) return;
+    marked.current = true;
+    mark();
+  }, [ready, mark]);
+
+  // Your own changes aren't news to you, and your own "joined" isn't either.
+  const list = (events.data ?? []).filter((e) => e.actor_member_id !== me?.id && e.details.member !== me?.id);
+  if (list.length === 0) return null;
+  const isNew = (e: TripEvent) => !!since && e.created_at > since;
+  const newCount = list.filter(isNew).length;
+  const shown = showAll ? list.slice(0, 20) : list.slice(0, Math.max(3, Math.min(newCount, 6)));
+  const nameOf = (memberId: string) => names.get(memberId) ?? 'Someone';
+
+  return (
+    <Section title="What's new">
+      {newCount > 0 ? (
+        <ThemedText type="small" themeColor="textSecondary">
+          {newCount} {newCount === 1 ? 'change' : 'changes'} since you last looked
+        </ThemedText>
+      ) : null}
+      <View style={[styles.feed, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        {shown.map((e, i) => (
+          <View
+            key={e.id}
+            style={[styles.feedRow, i > 0 && { borderTopWidth: 1, borderTopColor: theme.border }]}
+            accessible
+            accessibilityLabel={`${isNew(e) ? 'New: ' : ''}${describeEvent(e, nameOf, me?.id)}, ${timeAgo(e.created_at)}`}>
+            <View style={[styles.feedDot, { backgroundColor: isNew(e) ? theme.accent : 'transparent' }]} />
+            <View style={styles.grow}>
+              <ThemedText type="small" style={isNew(e) ? styles.feedNew : undefined}>
+                {describeEvent(e, nameOf, me?.id)}
+              </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {timeAgo(e.created_at)}
+              </ThemedText>
+            </View>
+          </View>
+        ))}
+      </View>
+      {list.length > shown.length || showAll ? (
+        <Button variant="quiet" label={showAll ? 'Show less' : 'Show more'} onPress={() => setShowAll((v) => !v)} />
+      ) : null}
+    </Section>
   );
 }
 
@@ -603,6 +669,10 @@ const styles = StyleSheet.create({
   },
   billAmounts: { alignItems: 'flex-end' },
   people: { gap: Spacing.two },
+  feed: { borderWidth: 1, borderRadius: Radius.medium, overflow: 'hidden' },
+  feedRow: { flexDirection: 'row', gap: Spacing.two, paddingVertical: Spacing.two, paddingHorizontal: Spacing.three },
+  feedDot: { width: 8, height: 8, borderRadius: 4, marginTop: 7 },
+  feedNew: { fontFamily: Fonts.semibold },
   member: { borderWidth: 1, borderRadius: Radius.medium, overflow: 'hidden' },
   memberMain: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, padding: Spacing.three },
   memberText: { flex: 1, gap: Spacing.half },

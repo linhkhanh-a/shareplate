@@ -64,6 +64,7 @@ export function TripLiveProvider({
         void qc.invalidateQueries({ queryKey: keys.members(tripId) });
         void qc.invalidateQueries({ queryKey: keys.trip(tripId) });
         void qc.invalidateQueries({ queryKey: keys.itinerary(tripId) });
+        void qc.invalidateQueries({ queryKey: keys.events(tripId) });
       }, 150);
     };
 

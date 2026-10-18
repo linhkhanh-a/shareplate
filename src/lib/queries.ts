@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/lib/auth';
 import { applyPlacements, type Activity, type ActivityFields, type Placement } from '@/lib/itinerary';
+import type { TripEvent } from '@/lib/activity';
 import { inviteUrl } from '@/lib/queries-helpers';
 import type { ScanResult } from '@/lib/receipt';
 import { supabase } from '@/lib/supabase';
@@ -75,6 +76,9 @@ export const keys = {
   bills: (id: string) => ['bills', id] as const,
   payments: (id: string) => ['payments', id] as const,
   itinerary: (id: string) => ['itinerary', id] as const,
+  events: (id: string) => ['events', id] as const,
+  lastSeen: (id: string) => ['last-seen', id] as const,
+  unread: (uid: string) => ['unread', uid] as const,
   invitePreview: (token: string) => ['invite-preview', token] as const,
 };
 
@@ -822,5 +826,109 @@ export async function fetchBillItems(billIds: string[]): Promise<Map<string, Bil
     result.set(row.bill_id, list);
   }
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// What's new
+// ---------------------------------------------------------------------------
+
+export function useTripEvents(tripId: string) {
+  return useQuery({
+    queryKey: keys.events(tripId),
+    queryFn: async (): Promise<TripEvent[]> => {
+      const { data, error } = await supabase
+        .from('trip_events')
+        .select('id, actor_member_id, kind, subject, amount_cents, details, created_at')
+        .eq('group_id', tripId)
+        .order('created_at', { ascending: false })
+        .limit(40);
+      if (error) throw error;
+      return (data as TripEvent[]).map((e) => ({ ...e, amount_cents: e.amount_cents === null ? null : n(e.amount_cents) }));
+    },
+  });
+}
+
+/** When you last looked at this trip (null if never). Read once per visit. */
+export function useLastSeen(tripId: string) {
+  const uid = useUserId();
+  return useQuery({
+    queryKey: keys.lastSeen(tripId),
+    enabled: !!uid,
+    // Kept for the whole visit (so "new" marks don't vanish), fetched fresh next visit.
+    staleTime: Infinity,
+    gcTime: 0,
+    queryFn: async (): Promise<string | null> => {
+      const { data, error } = await supabase.from('trip_reads').select('seen_at').eq('group_id', tripId).maybeSingle();
+      if (error) throw error;
+      return (data as { seen_at: string } | null)?.seen_at ?? null;
+    },
+  });
+}
+
+/** Marks everything in the trip as seen, for the "new" badges on the home screen. */
+export function useMarkSeen(tripId: string) {
+  const uid = useUserId();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from('trip_reads')
+        .upsert({ user_id: uid, group_id: tripId, seen_at: new Date().toISOString() }, { onConflict: 'user_id,group_id' });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['unread'] }),
+  });
+}
+
+/** How many things changed in each of your trips since you last looked. */
+export function useUnreadCounts() {
+  const uid = useUserId();
+  return useQuery({
+    queryKey: keys.unread(uid ?? 'signed-out'),
+    enabled: !!uid,
+    queryFn: async (): Promise<Map<string, number>> => {
+      const { data, error } = await supabase.rpc('my_unread_counts');
+      if (error) throw error;
+      return new Map((data as { group_id: string; unread: number }[]).map((r) => [r.group_id, n(r.unread)]));
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Deleting your account
+// ---------------------------------------------------------------------------
+
+export interface DeletionBlocker {
+  group_id: string;
+  trip_name: string;
+  reason: 'balance' | 'last_admin';
+  amount_cents: number;
+}
+
+export function useAccountBlockers(enabled: boolean) {
+  const uid = useUserId();
+  return useQuery({
+    queryKey: ['account-blockers', uid ?? ''],
+    enabled: enabled && !!uid,
+    queryFn: async (): Promise<DeletionBlocker[]> => {
+      const { data, error } = await supabase.rpc('account_deletion_blockers');
+      if (error) throw error;
+      return (data as DeletionBlocker[]).map((b) => ({ ...b, amount_cents: n(b.amount_cents) }));
+    },
+  });
+}
+
+/** Deletes your account, then signs out on this device. */
+export function useDeleteAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.rpc('delete_my_account');
+      if (error) throw error;
+      // The account is gone, so the server may refuse this; clear this device either way.
+      await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+      qc.clear();
+    },
+  });
 }
 
