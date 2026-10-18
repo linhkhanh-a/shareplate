@@ -92,6 +92,7 @@ describe('tripMoney', () => {
     vendor: null,
     category: 'Food',
     split_mode: 'exact',
+    itinerary_item_id: null,
     subtotal_cents: shares.reduce((a, [, c]) => a + c, 0),
     discount_cents: 0,
     tax_cents: 0,

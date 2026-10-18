@@ -3,12 +3,14 @@ import { useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { LiveBadge } from '@/components/live-badge';
 import { TopBar } from '@/components/top-bar';
 import { Avatar, Button, Divider, Loading, Notice, Pill, Screen, Section, TextField } from '@/components/ui';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { friendlyError } from '@/lib/errors';
+import { planDays } from '@/lib/itinerary';
 import { friendlyDate, tripMoney } from '@/lib/ledger';
 import { useTripLive } from '@/lib/live';
 import { describeEditors } from '@/lib/presence';
@@ -21,6 +23,7 @@ import {
   useAddGuest,
   useDeleteTrip,
   useInviteToken,
+  useItinerary,
   useLeaveTrip,
   useMembers,
   useRemoveMember,
@@ -41,6 +44,7 @@ export default function TripScreen() {
   const members = useMembers(id);
   const bills = useBills(id);
   const payments = usePayments(id);
+  const plan = useItinerary(id);
 
   const me = members.data?.find((m) => m.user_id === uid && !m.left_at);
   const isAdmin = me?.role === 'admin';
@@ -86,6 +90,8 @@ export default function TripScreen() {
 
       <MoneySummary tripId={id} myMemberId={me?.id} memberIds={active.map((m) => m.id)} />
 
+      <PlanTeaser tripId={id} />
+
       <Section title="Bills">
         {bills.isPending ? <Loading /> : null}
         {bills.isError ? <Notice tone="error">{friendlyError(bills.error)}</Notice> : null}
@@ -97,7 +103,14 @@ export default function TripScreen() {
         ) : null}
         <View style={styles.people}>
           {bills.data?.map((b) => (
-            <BillRow key={b.id} tripId={id} bill={b} payerName={names.get(b.paid_by_member_id) ?? 'Someone'} myMemberId={me?.id} />
+            <BillRow
+              key={b.id}
+              tripId={id}
+              bill={b}
+              payerName={names.get(b.paid_by_member_id) ?? 'Someone'}
+              myMemberId={me?.id}
+              pinnedTo={b.itinerary_item_id ? plan.data?.find((a) => a.id === b.itinerary_item_id)?.title : undefined}
+            />
           ))}
         </View>
         {payments.data && payments.data.length > 0 ? (
@@ -127,21 +140,6 @@ export default function TripScreen() {
       {isAdmin ? <TripSettings trip={trip.data} /> : null}
       <LeaveTrip tripId={id} />
     </Screen>
-  );
-}
-
-/** A small dot while changes from other people arrive live. */
-function LiveBadge() {
-  const theme = useTheme();
-  const { connected } = useTripLive();
-  if (!connected) return null;
-  return (
-    <View style={styles.live} accessibilityLabel="Updating live">
-      <View style={[styles.liveDot, { backgroundColor: theme.primary }]} />
-      <ThemedText type="small" themeColor="textSecondary">
-        Live
-      </ThemedText>
-    </View>
   );
 }
 
@@ -200,16 +198,44 @@ function MoneySummary({
   );
 }
 
+/** A short look at the trip plan, with the way in. */
+function PlanTeaser({ tripId }: { tripId: string }) {
+  const trip = useTrip(tripId);
+  const plan = useItinerary(tripId);
+  if (!trip.data || !plan.data) return null;
+  const count = plan.data.length;
+  const days = planDays(plan.data, trip.data.start_date, trip.data.end_date).length;
+  const summary =
+    count === 0
+      ? 'Nothing planned yet. Add activities with times, places and a planned budget.'
+      : `${count} ${count === 1 ? 'activity' : 'activities'} over ${days} ${days === 1 ? 'day' : 'days'}`;
+  return (
+    <Section title="Plan">
+      <ThemedText type="small" themeColor="textSecondary">
+        {summary}
+      </ThemedText>
+      <Button
+        variant="secondary"
+        label={count === 0 ? 'Start the trip plan' : 'Open the trip plan'}
+        onPress={() => router.push({ pathname: '/trips/[id]/plan', params: { id: tripId } })}
+      />
+    </Section>
+  );
+}
+
 function BillRow({
   tripId,
   bill,
   payerName,
   myMemberId,
+  pinnedTo,
 }: {
   tripId: string;
   bill: Bill;
   payerName: string;
   myMemberId?: string;
+  /** The plan activity this bill is pinned to. */
+  pinnedTo?: string;
 }) {
   const theme = useTheme();
   const editors = useTripLive().editorsOf(bill.id);
@@ -235,6 +261,11 @@ function BillRow({
         <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
           {payerName === 'You' ? 'You paid' : `${payerName} paid`}, {friendlyDate(bill.bill_date)}
         </ThemedText>
+        {pinnedTo ? (
+          <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+            Plan: {pinnedTo}
+          </ThemedText>
+        ) : null}
         {editors.length > 0 ? (
           <ThemedText type="small" style={{ color: theme.primary }} numberOfLines={1}>
             {describeEditors(editors)} editing
@@ -505,8 +536,6 @@ function LeaveTrip({ tripId }: { tripId: string }) {
 }
 
 const styles = StyleSheet.create({
-  live: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one, paddingHorizontal: Spacing.two },
-  liveDot: { width: 8, height: 8, borderRadius: 4 },
   grow: { flexGrow: 1, flexBasis: 0, minWidth: 0 },
   tabular: { fontVariant: ['tabular-nums'] },
   summary: { borderRadius: Radius.medium, padding: Spacing.four, gap: Spacing.one },

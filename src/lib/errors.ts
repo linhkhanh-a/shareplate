@@ -32,6 +32,10 @@ export function friendlyError(error: unknown): string {
     return "Someone else changed this bill while you were editing it. Your changes weren't saved. Go back and open it again to see the latest version.";
   }
   if (message.includes('BILL_NOT_FOUND')) return 'This bill was deleted.';
+  if (message.includes('STALE_ACTIVITY')) {
+    return "Someone else changed this activity while you were editing it. Your changes weren't saved. Go back and open it again to see the latest version.";
+  }
+  if (message.includes('ACTIVITY_NOT_FOUND')) return 'This activity was deleted. Go back to see the latest plan.';
   if (message.includes('ITEMIZED_BILL')) return 'Scanned bills are edited from the receipt screen.';
   if (message.includes('SHARES_NOT_TOTAL') || message.includes('EXACT_MISMATCH')) {
     return "Everyone's shares need to add up to the bill total.";

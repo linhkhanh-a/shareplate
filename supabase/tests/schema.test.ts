@@ -218,7 +218,8 @@ describe('bills and balances', () => {
       ),
     );
     expect(bill.rows[0].itinerary_item_id).toBeNull();
-    expect(bill.rows[0].version).toBeGreaterThan(1);
+    // Pinning and unpinning aren't edits, so nobody editing the bill gets a false warning.
+    expect(bill.rows[0].version).toBe(1);
   });
 });
 
@@ -694,3 +695,125 @@ describe('scanned (itemized) bills and receipt photos', () => {
     expect(r.rows).toEqual([{ public: false }]);
   });
 });
+
+describe('trip plan (itinerary)', () => {
+  async function addActivity(userId: string, groupId: string, day: number, position: number, title: string) {
+    return asUser(userId, async (tx) => {
+      const r = await tx.query<{ id: string }>(
+        `insert into itinerary_items (group_id, day_number, position, title) values ($1, $2, $3, $4) returning id`,
+        [groupId, day, position, title],
+      );
+      return r.rows[0].id;
+    });
+  }
+  const layout = (groupId: string) =>
+    asUser(LINH, async (tx) => {
+      const r = await tx.query<{ title: string; day_number: number; position: number; version: number }>(
+        `select title, day_number, position, version from itinerary_items where group_id = $1 order by day_number, position`,
+        [groupId],
+      );
+      return r.rows.map((x) => `${x.day_number}.${x.position} ${x.title} v${x.version}`);
+    });
+
+  it('lets trip members plan together and hides the plan from everyone else', async () => {
+    const { groupId } = await createTrip();
+    await addActivity(AN, groupId, 1, 0, 'Lake walk');
+    expect(await layout(groupId)).toEqual(['1.0 Lake walk v1']);
+    const seen = await asUser(OUTSIDER, (tx) => tx.query(`select 1 from itinerary_items where group_id = $1`, [groupId]));
+    expect(seen.rows).toHaveLength(0);
+    await expect(addActivity(OUTSIDER, groupId, 1, 1, 'Crashing the trip')).rejects.toThrow(/row-level security/);
+  });
+
+  it('moves activities across days in one step without counting it as an edit', async () => {
+    const { groupId } = await createTrip();
+    const walk = await addActivity(LINH, groupId, 1, 0, 'Lake walk');
+    const market = await addActivity(LINH, groupId, 1, 1, 'Night market');
+    const coffee = await addActivity(LINH, groupId, 2, 0, 'Coffee');
+
+    await asUser(AN, (tx) =>
+      tx.query(`select arrange_itinerary($1, $2)`, [
+        groupId,
+        JSON.stringify([
+          { id: market, day_number: 1, position: 0 },
+          { id: walk, day_number: 2, position: 0 },
+          { id: coffee, day_number: 2, position: 1 },
+        ]),
+      ]),
+    );
+    expect(await layout(groupId)).toEqual(['1.0 Night market v1', '2.0 Lake walk v1', '2.1 Coffee v1']);
+
+    // A real edit does bump the version, so stale edits are still caught.
+    await asUser(AN, (tx) => tx.query(`update itinerary_items set title = 'Lake walk at sunrise' where id = $1`, [walk]));
+    expect(await layout(groupId)).toContain('2.0 Lake walk at sunrise v2');
+  });
+
+  it('rearranges all or nothing, and only within your own trip', async () => {
+    const { groupId } = await createTrip();
+    const walk = await addActivity(LINH, groupId, 1, 0, 'Lake walk');
+    const before = await layout(groupId);
+
+    await expect(
+      asUser(LINH, (tx) =>
+        tx.query(`select arrange_itinerary($1, $2)`, [
+          groupId,
+          JSON.stringify([
+            { id: walk, day_number: 3, position: 0 },
+            { id: '00000000-0000-4000-8000-0000000000ff', day_number: 1, position: 1 },
+          ]),
+        ]),
+      ),
+    ).rejects.toThrow(/ACTIVITY_NOT_FOUND/);
+    expect(await layout(groupId)).toEqual(before);
+
+    await expect(
+      asUser(OUTSIDER, (tx) =>
+        tx.query(`select arrange_itinerary($1, $2)`, [groupId, JSON.stringify([{ id: walk, day_number: 2, position: 0 }])]),
+      ),
+    ).rejects.toThrow(/ACTIVITY_NOT_FOUND/);
+    await expect(asAnon((tx) => tx.query(`select arrange_itinerary($1, '[]')`, [groupId]))).rejects.toThrow(
+      /permission denied/,
+    );
+  });
+
+  it('pins a bill without changing its version, and only to an activity in the same trip', async () => {
+    const { groupId, linhId } = await createTrip();
+    const billId = await saveEqualBill(LINH, groupId, linhId, [[linhId, 1800]]);
+    const market = await addActivity(LINH, groupId, 1, 0, 'Night market');
+    await asUser(AN, (tx) => tx.query(`update bills set itinerary_item_id = $1 where id = $2`, [market, billId]));
+    const bill = await asUser(LINH, (tx) =>
+      tx.query<{ itinerary_item_id: string; version: number }>(`select itinerary_item_id, version from bills where id = $1`, [
+        billId,
+      ]),
+    );
+    expect(bill.rows[0]).toEqual({ itinerary_item_id: market, version: 1 });
+
+    const other = await createTrip();
+    const elsewhere = await addActivity(LINH, other.groupId, 1, 0, 'Another trip’s dinner');
+    await expect(
+      asUser(LINH, (tx) => tx.query(`update bills set itinerary_item_id = $1 where id = $2`, [elsewhere, billId])),
+    ).rejects.toThrow(/foreign key/);
+  });
+
+  it('updates everyone live when the plan changes', async () => {
+    const { groupId } = await createTrip();
+    const stamp = async () =>
+      (await db.query<{ a: string }>(`select activity_at::text as a from groups where id = $1`, [groupId])).rows[0].a;
+    const before = await stamp();
+    await new Promise((r) => setTimeout(r, 5));
+    await addActivity(AN, groupId, 1, 0, 'Lake walk');
+    expect((await stamp()) > before).toBe(true);
+  });
+
+  it('keeps notes and places to a sensible length', async () => {
+    const { groupId } = await createTrip();
+    await expect(
+      asUser(LINH, (tx) =>
+        tx.query(`insert into itinerary_items (group_id, day_number, title, notes) values ($1, 1, 'Hike', $2)`, [
+          groupId,
+          'x'.repeat(2001),
+        ]),
+      ),
+    ).rejects.toThrow(/notes_length/);
+  });
+});
+

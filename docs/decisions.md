@@ -225,3 +225,39 @@ Receipts print the subtotal either before or after discounts, so both count as
 a match. When neither matches, the review screen says how far off the items are
 and what to look for. A discount read as an item throws a printed-after-discount
 subtotal off by twice its amount, so the message names both possible amounts.
+
+## 35. The plan is days and activities; days come from the trip's dates
+
+A trip shows every day between its first and last date, plus any later day that
+has activities, and always at least one day. Empty days aren't stored, so
+there's nothing to clean up when dates change. "Plan another day" opens a new
+activity on the next day. Trip dates are set by admins (they already own the
+trip's settings) and typed as year-month-day like bill dates; a calendar
+picker is still for the polish phase. Plans are capped at 60 days.
+
+## 36. Dragging is our own small component on React Native's touch system
+
+Dragging uses a grip on each activity, so scrolling the page still works
+anywhere else, and the page stops scrolling while a grip is held. It's built
+on React Native's PanResponder, which behaves the same on iPhone, iPad and the
+web, instead of adding a drag-and-drop library. Screen reader users get
+"Move up" and "Move down" actions on each grip. Dragging works within a day;
+the activity editor moves an activity to another day. A new order is saved in
+one step (`arrange_itinerary`) and shown right away, and undone if saving fails.
+
+## 37. Moving or pinning isn't editing
+
+Activities and bills keep a version number to catch two people saving over each
+other (decision 9). Dragging an activity, or pinning a bill to one, no longer
+changes that version, so someone editing the activity or the bill at the same
+time doesn't get a false "someone else changed this" warning. Real edits still
+do.
+
+## 38. Pinning is separate from saving a bill
+
+A bill is pinned to at most one activity. The bill editors have a "Part of the
+plan" picker (showing that day's activities when the trip has dates), and the
+activity screen can pin existing bills or add a new one already pinned. The
+pin is saved right after the bill, so the money functions stay unchanged.
+Deleting an activity keeps its bills, just unpinned. Spent amounts are bill
+totals; per-person budgets come in Phase 7.

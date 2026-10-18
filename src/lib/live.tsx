@@ -9,10 +9,10 @@ import { supabase } from '@/lib/supabase';
 interface TripLive {
   /** True while changes from other people are arriving live. */
   connected: boolean;
-  /** Names of other people who have this bill open right now. */
-  editorsOf: (billId: string) => string[];
-  /** Tell others which bill you have open (null when you close it). */
-  setEditing: (billId: string | null) => void;
+  /** Names of other people who have this bill or activity open right now. */
+  editorsOf: (id: string) => string[];
+  /** Tell others which bill or activity you have open (null when you close it). */
+  setEditing: (id: string | null) => void;
 }
 
 const TripLiveContext = createContext<TripLive>({
@@ -29,7 +29,7 @@ export function useTripLive(): TripLive {
  * Keeps one trip up to date while any of its screens are open.
  *
  * - Data: listens for changes to the trip's row. The database bumps it on every
- *   new, edited or deleted bill, payment or person, so the screens refetch.
+ *   new, edited or deleted bill, payment, person or plan activity, so the screens refetch.
  * - Presence: shares who is editing what.
  * Both channels are private: only trip members can join them.
  */
@@ -63,6 +63,7 @@ export function TripLiveProvider({
         void qc.invalidateQueries({ queryKey: keys.payments(tripId) });
         void qc.invalidateQueries({ queryKey: keys.members(tripId) });
         void qc.invalidateQueries({ queryKey: keys.trip(tripId) });
+        void qc.invalidateQueries({ queryKey: keys.itinerary(tripId) });
       }, 150);
     };
 

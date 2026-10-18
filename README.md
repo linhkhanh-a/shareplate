@@ -17,8 +17,8 @@ One codebase runs on **iPhone, iPad, and the web**.
 | 3 | Add bills by hand, ledger, Settle Up | ✅ Done |
 | 4 | Real-time sync between phones | ✅ Done |
 | 5 | Receipt scanner | ✅ Done |
-| 6 | Itinerary planner and pinning bills | Next |
-| 7 | Budget dashboard | |
+| 6 | Itinerary planner and pinning bills | Done |
+| 7 | Budget dashboard | Next |
 | 8 | Quick-split mode, share card, spreadsheet export | |
 | 9 | Polish and launch | |
 

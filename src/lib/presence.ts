@@ -2,7 +2,7 @@
 export interface PresenceInfo {
   memberId: string;
   name: string;
-  /** The bill this person has open in the editor, if any. */
+  /** The bill or plan activity this person has open in an editor, if any. (Ids never clash.) */
   editingBillId: string | null;
 }
 
