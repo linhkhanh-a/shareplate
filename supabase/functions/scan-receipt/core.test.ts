@@ -89,7 +89,7 @@ describe('normalizeReceipt', () => {
     expect(r.discount_cents).toBe(0);
   });
 
-  it('flags totals that don’t add up and prices it couldn’t read', () => {
+  it('flags prices it couldn’t read, leaving total checks to the app', () => {
     const r = normalizeReceipt({
       ...receiptJson,
       items: [{ name: 'Phở bò', line_total: 15 }, { name: 'Smudged line', line_total: null }],
@@ -99,7 +99,7 @@ describe('normalizeReceipt', () => {
       { name: 'Smudged line', price_cents: 0 },
     ]);
     expect(r.warnings.join(' ')).toMatch(/Couldn't read the price for "Smudged line"/);
-    expect(r.warnings.join(' ')).toMatch(/don’t add up to the subtotal/);
+    expect(r.warnings).toHaveLength(1);
   });
 
   it('refuses photos that aren’t receipts, and cleans up odd values', () => {

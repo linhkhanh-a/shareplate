@@ -159,7 +159,6 @@ export function normalizeReceipt(raw: unknown): ScanResult {
   const subtotal = toCents(r.subtotal);
   const total = toCents(r.total);
 
-  const itemsSum = items.reduce((s, i) => s + i.price_cents, 0);
   if (items.length === 0) warnings.push("Couldn't find any items. Add them by hand.");
   if (movedDiscounts.length > 0) {
     warnings.push(
@@ -167,13 +166,7 @@ export function normalizeReceipt(raw: unknown): ScanResult {
         `${movedDiscounts.slice(0, 4).join(', ')}${movedDiscounts.length > 4 ? '…' : ''}. Check the discount on the next step.`,
     );
   }
-  // Some stores print the subtotal before discounts, others after.
-  if (subtotal !== null && items.length > 0 && subtotal !== itemsSum && subtotal !== itemsSum - discount) {
-    warnings.push('The items don’t add up to the subtotal printed on the receipt. Check for a missed or misread line.');
-  }
-  if (total !== null && items.length > 0 && total !== itemsSum - discount + tax + tip) {
-    warnings.push('Items, discount, tax and tip don’t add up to the receipt’s total. Check them against the photo.');
-  }
+  // Subtotal and total mismatches are checked live in the app as people edit, so they aren't repeated here.
 
   const date = typeof r.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.date) ? r.date : null;
   const category = (CATEGORIES as readonly string[]).includes(String(r.category))
