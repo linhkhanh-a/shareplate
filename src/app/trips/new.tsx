@@ -29,6 +29,15 @@ export default function NewTripScreen() {
   const [name, setName] = useState('');
   const [mode, setMode] = useState<TripMode>('registered');
   const [nameError, setNameError] = useState<string | null>(null);
+  const [guests, setGuests] = useState<string[]>([]);
+  const [guest, setGuest] = useState('');
+
+  function addGuest() {
+    const trimmed = guest.trim();
+    if (!trimmed || guests.length >= 30) return;
+    setGuests((g) => [...g, trimmed]);
+    setGuest('');
+  }
 
   async function onCreate() {
     const trimmed = name.trim();
@@ -38,7 +47,8 @@ export default function NewTripScreen() {
     }
     setNameError(null);
     try {
-      const id = await create.mutateAsync({ name: trimmed, mode });
+      const pending = guest.trim() ? [...guests, guest.trim()] : guests;
+      const id = await create.mutateAsync({ name: trimmed, mode, guests: mode === 'quick' ? pending : [] });
       router.replace({ pathname: '/trips/[id]', params: { id } });
     } catch {
       // Shown below from create.error.
@@ -95,6 +105,39 @@ export default function NewTripScreen() {
         })}
       </View>
 
+      {mode === 'quick' ? (
+        <View style={styles.modes}>
+          <TextField
+            label="Who's splitting with you?"
+            hint="Add people by name. They don't need the app; you'll send each of them their total at the end."
+            placeholder="Their name"
+            value={guest}
+            onChangeText={setGuest}
+            maxLength={60}
+            onSubmitEditing={addGuest}
+            submitBehavior="submit"
+          />
+          <Button label="Add person" variant="secondary" onPress={addGuest} disabled={!guest.trim()} />
+          {guests.length > 0 ? (
+            <View style={styles.guests} accessibilityLabel={`${guests.length} people added`}>
+              {guests.map((g, i) => (
+                <Pressable
+                  key={`${g}-${i}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${g}`}
+                  onPress={() => setGuests((list) => list.filter((_, j) => j !== i))}
+                  style={[styles.guest, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}>
+                  <ThemedText type="small">{g}</ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    ×
+                  </ThemedText>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
       {create.isError ? <Notice tone="error">{friendlyError(create.error)}</Notice> : null}
     </Screen>
   );
@@ -119,4 +162,14 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   radioDot: { width: 10, height: 10, borderRadius: 5 },
+  guests: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
+  guest: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    minHeight: 36,
+    paddingHorizontal: Spacing.three,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+  },
 });

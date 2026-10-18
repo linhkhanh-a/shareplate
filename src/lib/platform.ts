@@ -38,3 +38,25 @@ export async function copyText(text: string): Promise<'copied' | 'shared'> {
   await Share.share({ message: text });
   return 'shared';
 }
+
+/**
+ * Shares a message: the share sheet on phones (and phone browsers that have
+ * one, like Safari on iPhone), otherwise copies it to the clipboard.
+ */
+export async function shareText(text: string): Promise<'shared' | 'copied'> {
+  if (Platform.OS === 'web') {
+    const touch = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
+    if (touch && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ text });
+        return 'shared';
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') return 'shared';
+      }
+    }
+    await navigator.clipboard.writeText(text);
+    return 'copied';
+  }
+  await Share.share({ message: text });
+  return 'shared';
+}

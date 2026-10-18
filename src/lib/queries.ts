@@ -141,10 +141,15 @@ export function useTrips() {
 export function useCreateTrip() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { name: string; mode: TripMode }): Promise<string> => {
-      const { data, error } = await supabase.from('groups').insert(input).select('id').single();
+    mutationFn: async ({ guests = [], ...trip }: { name: string; mode: TripMode; guests?: string[] }): Promise<string> => {
+      const { data, error } = await supabase.from('groups').insert(trip).select('id').single();
       if (error) throw error;
-      return (data as { id: string }).id;
+      const id = (data as { id: string }).id;
+      if (guests.length > 0) {
+        // The trip exists either way; if this fails, guests can still be added on the trip screen.
+        await supabase.from('group_members').insert(guests.map((display_name) => ({ group_id: id, display_name })));
+      }
+      return id;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['trips'] }),
   });
@@ -790,5 +795,32 @@ export function usePinBill(tripId: string) {
     },
     onSettled: () => qc.invalidateQueries({ queryKey: keys.bills(tripId) }),
   });
+}
+
+/** Items of the given scanned bills, for the spreadsheet export. */
+export async function fetchBillItems(billIds: string[]): Promise<Map<string, BillItem[]>> {
+  const result = new Map<string, BillItem[]>();
+  if (billIds.length === 0) return result;
+  const { data, error } = await supabase
+    .from('bill_items')
+    .select('id, bill_id, name, price_cents, position, mappings:bill_item_mappings(group_member_id)')
+    .in('bill_id', billIds)
+    .order('position');
+  if (error) throw error;
+  for (const row of data as unknown as (Omit<BillItem, 'member_ids'> & {
+    bill_id: string;
+    mappings: { group_member_id: string }[];
+  })[]) {
+    const list = result.get(row.bill_id) ?? [];
+    list.push({
+      id: row.id,
+      name: row.name,
+      price_cents: n(row.price_cents),
+      position: row.position,
+      member_ids: row.mappings.map((m) => m.group_member_id),
+    });
+    result.set(row.bill_id, list);
+  }
+  return result;
 }
 

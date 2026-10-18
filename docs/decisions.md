@@ -284,3 +284,35 @@ Regular members can't edit their member row (it holds their role), so
 `set_daily_allowance` lets anyone set their own allowance and admins set
 anyone's, such as a guest's. The trip budget stays an admin setting, like the
 trip's name and dates.
+
+## 42. Sharing is a card, a message, and a note for each person
+
+The Share screen has one summary card (trip, total, each person's share, the
+payments to settle up with Zelle info) that can be shared as an image or as
+text, plus a short personal message for each person. In a quick split, guests
+are listed first since they're the ones who need a message. On phones these
+open the share sheet; on the web, text is copied and images download (or open
+the share sheet in phone browsers that support it).
+
+## 43. Our own small Excel writer
+
+An .xlsx file is a zip of a few XML files. Writing them directly (with the
+small `fflate` zip library) keeps the app light and works the same on phones
+and the web, instead of adding a large spreadsheet library. It supports text,
+numbers, money and dates, bold frozen headers and column widths, and is checked
+in tests by unzipping it and by opening it with a real spreadsheet reader.
+Money is converted from cents to dollars only here, for display. The CSV has a
+byte order mark so Excel shows Vietnamese names correctly, and text starting
+with = + - @ is escaped so it can't run as a formula.
+
+## 44. No direct Google Sheets export (for now)
+
+Writing to someone's Google Drive needs an extra Google permission, which means
+another round of Google's app verification. Google Sheets opens the Excel file
+directly (File, Import), so that covers it without asking for more access.
+
+## 45. New native pieces for the iPhone app
+
+Sharing files and images on iPhone uses `expo-sharing`, `expo-file-system` and
+`react-native-view-shot`. They're Expo-supported, so they just need to be in the
+iOS build made in Phase 9.
