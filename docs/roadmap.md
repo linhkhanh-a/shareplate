@@ -35,10 +35,12 @@ link once hosting is set up, and a "try this" checklist.
 - [x] Record payments and undo them
 - [x] Catch two people saving the same bill at once
 
-## Phase 4: Real-time
-- [ ] Live updates across phones (Supabase Realtime)
-- [ ] Optimistic updates with rollback
-- [ ] "X is editing" indicators and version-conflict warnings
+## Phase 4: Real-time ✅
+- [x] Live updates across phones: new, edited and deleted bills, payments and people
+- [x] Instant updates on your own screen for deletes and payments, undone if saving fails
+- [x] "Minh is editing" on bills, and a warning when someone saves a newer version first
+- [x] Private live channels: only trip members can join
+- [x] Catch up automatically after a dropped connection
 
 ## Phase 5: Receipt scanner
 - [ ] Camera or upload, stored privately

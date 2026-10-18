@@ -415,6 +415,16 @@ export function useDeleteBill(tripId: string) {
       const { error } = await supabase.from('bills').delete().eq('id', billId);
       if (error) throw error;
     },
+    // Disappear right away; put it back if the delete fails.
+    onMutate: async (billId) => {
+      await qc.cancelQueries({ queryKey: keys.bills(tripId) });
+      const previous = qc.getQueryData<Bill[]>(keys.bills(tripId));
+      qc.setQueryData<Bill[]>(keys.bills(tripId), (bills) => bills?.filter((b) => b.id !== billId));
+      return { previous };
+    },
+    onError: (_error, _billId, context) => {
+      if (context?.previous) qc.setQueryData(keys.bills(tripId), context.previous);
+    },
     onSettled: () => invalidateMoney(qc, tripId),
   });
 }
@@ -425,6 +435,23 @@ export function useRecordPayment(tripId: string) {
     mutationFn: async (p: { from_member_id: string; to_member_id: string; amount_cents: number }) => {
       const { error } = await supabase.from('settlements').insert({ ...p, group_id: tripId, method: 'zelle' });
       if (error) throw error;
+    },
+    // Show the payment (and the new balances) right away; undo if saving fails.
+    onMutate: async (p) => {
+      await qc.cancelQueries({ queryKey: keys.payments(tripId) });
+      const previous = qc.getQueryData<Payment[]>(keys.payments(tripId));
+      const now = new Date();
+      const pending: Payment = {
+        id: `pending-${now.getTime()}`,
+        ...p,
+        settled_on: now.toISOString().slice(0, 10),
+        created_at: now.toISOString(),
+      };
+      qc.setQueryData<Payment[]>(keys.payments(tripId), (payments) => [pending, ...(payments ?? [])]);
+      return { previous };
+    },
+    onError: (_error, _p, context) => {
+      if (context?.previous) qc.setQueryData(keys.payments(tripId), context.previous);
     },
     onSettled: () => invalidateMoney(qc, tripId),
   });
@@ -437,7 +464,15 @@ export function useDeletePayment(tripId: string) {
       const { error } = await supabase.from('settlements').delete().eq('id', paymentId);
       if (error) throw error;
     },
+    onMutate: async (paymentId) => {
+      await qc.cancelQueries({ queryKey: keys.payments(tripId) });
+      const previous = qc.getQueryData<Payment[]>(keys.payments(tripId));
+      qc.setQueryData<Payment[]>(keys.payments(tripId), (payments) => payments?.filter((p) => p.id !== paymentId));
+      return { previous };
+    },
+    onError: (_error, _paymentId, context) => {
+      if (context?.previous) qc.setQueryData(keys.payments(tripId), context.previous);
+    },
     onSettled: () => invalidateMoney(qc, tripId),
   });
 }
-

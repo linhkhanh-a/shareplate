@@ -2,7 +2,7 @@
 import { PGlite, type Transaction } from '@electric-sql/pglite';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 /**
  * Runs the real migration against an in-memory Postgres and checks the
@@ -114,6 +114,11 @@ beforeAll(async () => {
 // Every test starts from an identical, untouched copy of the database.
 beforeEach(async () => {
   db = (await template.clone()) as PGlite;
+});
+
+// Each copy holds a whole database in memory; free it before the next test.
+afterEach(async () => {
+  await db.close();
 });
 
 describe('sign-up and trips', () => {
@@ -505,5 +510,83 @@ describe('saving bills', () => {
     await expect(
       save(LINH, { ...bill, total_cents: 0, participants: [{ member_id: linhId, amount_cents: 0 }] }),
     ).rejects.toThrow(/BAD_AMOUNT/);
+  });
+});
+
+describe('live updates', () => {
+  const activity = async (groupId: string) =>
+    (await db.query<{ a: string }>(`select activity_at::text as a from groups where id = $1`, [groupId])).rows[0].a;
+  const tick = () => new Promise((r) => setTimeout(r, 5));
+
+  it('bumps the trip’s activity stamp for new bills, deleted bills, payments and people', async () => {
+    const { groupId, linhId, anId } = await createTrip();
+    let last = await activity(groupId);
+    const expectBumped = async () => {
+      const now = await activity(groupId);
+      expect(now > last).toBe(true);
+      last = now;
+    };
+
+    await tick();
+    const billId = await saveEqualBill(LINH, groupId, linhId, [
+      [linhId, 500],
+      [anId, 500],
+    ]);
+    await expectBumped();
+
+    await tick();
+    await asUser(AN, (tx) =>
+      tx.query(`insert into settlements (group_id, from_member_id, to_member_id, amount_cents) values ($1, $2, $3, 500)`, [
+        groupId,
+        anId,
+        linhId,
+      ]),
+    );
+    await expectBumped();
+
+    await tick();
+    await asUser(LINH, (tx) => tx.query(`delete from bills where id = $1`, [billId]));
+    await expectBumped();
+
+    await tick();
+    await asUser(LINH, (tx) => tx.query(`insert into group_members (group_id, display_name) values ($1, 'Tuấn')`, [groupId]));
+    await expectBumped();
+  });
+
+  it('publishes trip changes to Supabase Realtime', async () => {
+    const r = await db.query(
+      `select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'groups'`,
+    );
+    expect(r.rows).toHaveLength(1);
+  });
+
+  it('only lets trip members join a trip’s live channel', async () => {
+    const { groupId } = await createTrip();
+    const can = (userId: string, topic: string) =>
+      asUser(userId, async (tx) => {
+        const r = await tx.query<{ ok: boolean }>(`select can_use_trip_channel($1) as ok`, [topic]);
+        return r.rows[0].ok;
+      });
+    expect(await can(LINH, `trip:${groupId}`)).toBe(true);
+    expect(await can(LINH, `trip-data:${groupId}`)).toBe(true);
+    expect(await can(OUTSIDER, `trip:${groupId}`)).toBe(false);
+    expect(await can(OUTSIDER, `trip-data:${groupId}`)).toBe(false);
+    expect(await can(LINH, 'trip:not-a-uuid')).toBe(false);
+    expect(await can(LINH, `room:${groupId}`)).toBe(false);
+  });
+
+  it('enforces the channel rule on Realtime messages', async () => {
+    const { groupId } = await createTrip();
+    const send = (userId: string) =>
+      db.transaction(async (tx) => {
+        await tx.query(`select set_config('request.jwt.claim.sub', $1, true)`, [userId]);
+        await tx.query(`select set_config('realtime.topic', $1, true)`, [`trip:${groupId}`]);
+        await tx.exec('set local role authenticated');
+        await tx.query(`insert into realtime.messages (topic, extension, payload) values ($1, 'presence', '{}')`, [
+          `trip:${groupId}`,
+        ]);
+      });
+    await send(AN);
+    await expect(send(OUTSIDER)).rejects.toThrow(/row-level security/);
   });
 });

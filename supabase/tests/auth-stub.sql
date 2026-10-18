@@ -29,3 +29,21 @@ grant execute on function auth.uid() to anon, authenticated, service_role;
 grant usage on schema public to anon, authenticated, service_role;
 alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
 alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
+
+-- Supabase Realtime's pieces the live-update migration touches.
+create publication supabase_realtime;
+create schema realtime;
+grant usage on schema realtime to anon, authenticated, service_role;
+create table realtime.messages (
+  id bigserial primary key,
+  topic text not null,
+  extension text not null,
+  payload jsonb
+);
+alter table realtime.messages enable row level security;
+grant select, insert on realtime.messages to authenticated;
+grant usage on sequence realtime.messages_id_seq to authenticated;
+create function realtime.topic() returns text
+language sql stable
+as $$ select nullif(current_setting('realtime.topic', true), ''); $$;
+grant execute on function realtime.topic() to anon, authenticated, service_role;

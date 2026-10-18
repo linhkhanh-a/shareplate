@@ -156,3 +156,29 @@ Phones and browsers have very different date pickers. Most bills are added the
 same day or the next, so two shortcuts cover the common case. A proper
 calendar picker can come with the itinerary in Phase 6.
 
+## 26. One "something changed" stamp per trip drives live updates
+
+Supabase's live change feed can be filtered by trip for new and edited rows,
+but not for deleted ones. Instead, every change in a trip (bills, payments,
+people) bumps `groups.activity_at`, and each phone listens to its own trip's
+row. That one signal covers inserts, edits and deletes, and row level security
+decides who hears it. Phones then refetch, so they always show what the
+database says.
+
+## 27. Both live channels are private
+
+`trip-data:<id>` (changes) and `trip:<id>` (who's editing) only accept trip
+members, checked by `can_use_trip_channel` in the database.
+
+## 28. Some actions update the screen before the database confirms
+
+Deleting a bill, recording a payment and undoing a payment show up instantly
+and roll back if the save fails. Saving a bill waits for the database, because
+it's the step most likely to be refused (for example, a newer version exists).
+
+## 29. Editing conflicts are shown, not silently merged
+
+If someone saves a bill while you have it open, the editor says so and offers
+"Load latest version". Your unsaved edits stay on screen until you choose,
+and the database refuses to overwrite their version either way.
+

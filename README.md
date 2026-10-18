@@ -15,8 +15,8 @@ One codebase runs on **iPhone, iPad, and the web**.
 | 1 | Money engine (splitting math) | ✅ Done |
 | 2 | Sign in with Google, trips, members, guests | ✅ Done |
 | 3 | Add bills by hand, ledger, Settle Up | ✅ Done |
-| 4 | Real-time sync between phones | Next |
-| 5 | Receipt scanner | |
+| 4 | Real-time sync between phones | ✅ Done |
+| 5 | Receipt scanner | Next |
 | 6 | Itinerary planner and pinning bills | |
 | 7 | Budget dashboard | |
 | 8 | Quick-split mode, share card, spreadsheet export | |
