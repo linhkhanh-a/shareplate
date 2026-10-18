@@ -40,6 +40,7 @@ import {
   useSetGuestZelle,
   useSetRole,
   useSetTripCurrency,
+  useStartOver,
   useTrip,
   type Bill,
   type Member,
@@ -772,9 +773,75 @@ function TripSettings({ trip }: { trip: Trip }) {
       {saved ? <Notice tone="success">Trip renamed.</Notice> : null}
       {rename.isError ? <Notice tone="error">{friendlyError(rename.error)}</Notice> : null}
       <CurrencyPicker tripId={trip.id} />
+      <StartOver tripId={trip.id} tripName={trip.name} />
       <Button label="Delete trip" variant="danger" onPress={onDelete} loading={del.isPending} />
       {del.isError ? <Notice tone="error">{friendlyError(del.error)}</Notice> : null}
     </Section>
+  );
+}
+
+/** Clears every bill and payment, after typing the trip's name, for a test trip or one that got tangled. */
+function StartOver({ tripId, tripName }: { tripId: string; tripName: string }) {
+  const startOver = useStartOver(tripId);
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState('');
+  const [done, setDone] = useState(false);
+  const matches = typed.trim().toLowerCase() === tripName.trim().toLowerCase();
+
+  async function onClear() {
+    setDone(false);
+    try {
+      await startOver.mutateAsync();
+      setDone(true);
+      setOpen(false);
+      setTyped('');
+    } catch {
+      // Shown below.
+    }
+  }
+
+  return (
+    <View style={{ gap: Spacing.two }}>
+      <ThemedText type="strong">Start over</ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        Clears every bill and payment for everyone, so all balances go back to $0.00. People, the plan and settings
+        stay. Handy for a test trip, or one that got tangled.
+      </ThemedText>
+      {open ? (
+        <>
+          <TextField
+            label={`Type "${tripName}" to confirm`}
+            value={typed}
+            onChangeText={setTyped}
+            autoCapitalize="none"
+            autoCorrect={false}
+            maxLength={100}
+          />
+          <View style={styles.buttonRow}>
+            <Button
+              label="Clear all bills and payments"
+              variant="danger"
+              onPress={onClear}
+              disabled={!matches}
+              loading={startOver.isPending}
+              style={styles.grow}
+            />
+            <Button
+              label="Cancel"
+              variant="quiet"
+              onPress={() => {
+                setOpen(false);
+                setTyped('');
+              }}
+            />
+          </View>
+        </>
+      ) : (
+        <Button label="Start over…" variant="secondary" onPress={() => setOpen(true)} />
+      )}
+      {done ? <Notice tone="success">All bills and payments are cleared. Everyone is at $0.00.</Notice> : null}
+      {startOver.isError ? <Notice tone="error">{friendlyError(startOver.error)}</Notice> : null}
+    </View>
   );
 }
 

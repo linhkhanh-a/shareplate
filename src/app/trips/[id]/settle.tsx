@@ -11,6 +11,7 @@ import { useAuth } from '@/lib/auth';
 import { friendlyError } from '@/lib/errors';
 import { describeEvent, timeAgo } from '@/lib/activity';
 import { friendlyDate, todayIso, tripMoney } from '@/lib/ledger';
+import { overpaid } from '@/lib/impact';
 import { canRemovePayment, formerWithBalance, settleTiming, zelleOf } from '@/lib/people';
 import { confirmAction, copyText } from '@/lib/platform';
 import {
@@ -61,6 +62,8 @@ export default function SettleScreen() {
   // Only trips from before former members were locked at $0 can have these.
   const stranded = formerWithBalance(all, money.balances);
   const timing = settleTiming(trip.data?.end_date ?? null, todayIso());
+  // Payments that went past what the bills ask: left over from bills deleted or lowered after people paid.
+  const leftover = overpaid(bills.data ?? [], payments.data ?? []);
 
   // Your own payments first, then the rest.
   const transfers = [...money.transfers].sort(
@@ -90,6 +93,25 @@ export default function SettleScreen() {
         <Notice tone="success">
           <ThemedText type="strong">The trip&apos;s over, time to settle up</ThemedText>
           <ThemedText type="small">Here are the fewest payments that clear everything.</ThemedText>
+        </Notice>
+      ) : null}
+
+      {leftover.length > 0 ? (
+        <Notice>
+          <ThemedText type="strong">Some of this is money going back</ThemedText>
+          <ThemedText type="small">
+            Recorded payments are more than the bills ask for. This happens when a bill is deleted or lowered after
+            people paid for it.
+          </ThemedText>
+          {leftover.slice(0, 4).map((l) => (
+            <ThemedText key={l.memberId} type="small">
+              {`• ${name(l.memberId)} ${l.cents > 0 ? `${l.memberId === me?.id ? 'are' : 'is'} owed ${formatCents(l.cents)} back` : `${l.memberId === me?.id ? 'have' : 'has'} ${formatCents(-l.cents)} to give back`}`}
+            </ThemedText>
+          ))}
+          <ThemedText type="small">
+            If that money really moved, settle it back below. If those payments were mistakes or tests, remove them
+            under Payments recorded.
+          </ThemedText>
         </Notice>
       ) : null}
 

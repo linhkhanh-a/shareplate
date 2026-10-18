@@ -16,6 +16,8 @@ import { useAuth } from '@/lib/auth';
 import { friendlyError } from '@/lib/errors';
 import { confirmAction } from '@/lib/platform';
 import { dateChoices } from '@/lib/dates';
+import { withShares } from '@/lib/impact';
+import { useBillImpact } from '@/lib/use-bill-impact';
 import { clearDraft, draftKey, loadDraft, storeDraft, type SavedDraft } from '@/lib/drafts';
 import { CATEGORIES, formatPercent, isValidIsoDate, todayIso } from '@/lib/ledger';
 import { useTripLive } from '@/lib/live';
@@ -151,6 +153,7 @@ function ScanWizard({
   tripDates: { start: string | null; end: string | null };
 }) {
   const save = useSaveItemizedBill(tripId);
+  const impact = useBillImpact(tripId, myMemberId);
   const pin = usePinBill(tripId);
   const [activityId, setActivityId] = useState<string | null>(existing ? existing.itinerary_item_id : (pinTo ?? null));
   const { setEditing, editorsOf } = useTripLive();
@@ -263,6 +266,14 @@ function ScanWizard({
 
   async function onSave() {
     if (!check.result) return;
+    // Once people have paid, an edit can mean money going back: say so first.
+    if (existing && impact.hasPayments) {
+      const preview = impact.describe(
+        existing.id,
+        withShares(existing, draft.payerId, check.result.members.map((m) => ({ memberId: m.memberId, amountCents: m.totalCents }))),
+      );
+      if (preview && preview.changes > 0 && !(await confirmAction('Save these changes?', preview.text, 'Save changes'))) return;
+    }
     let savedId: string;
     try {
       savedId = await save.mutateAsync(
@@ -508,6 +519,7 @@ function ScanWizard({
 
       {step !== 'photo' ? (
         <BillEndActions
+          myMemberId={myMemberId}
           tripId={tripId}
           existing={existing}
           former={existing ? formerOnBill(members, existing) : []}

@@ -1262,3 +1262,37 @@ describe('places in the plan', () => {
     ).rejects.toThrow(/location_lat_check/);
   });
 });
+
+describe('start over', () => {
+  it('lets an admin clear every bill and payment, even with people who left, in one news line', async () => {
+    const { groupId, linhId, anId, guestId } = await createTrip();
+    await saveEqualBill(LINH, groupId, linhId, [
+      [linhId, 1000],
+      [anId, 1000],
+      [guestId, 1000],
+    ]);
+    await asUser(LINH, (tx) =>
+      tx.query(`insert into settlements (group_id, from_member_id, to_member_id, amount_cents) values ($1, $2, $3, 1000)`, [
+        groupId,
+        guestId,
+        linhId,
+      ]),
+    );
+    await asUser(LINH, (tx) => tx.query(`update group_members set left_at = now() where id = $1`, [guestId]));
+
+    await expect(asUser(AN, (tx) => tx.query(`select clear_trip_money($1)`, [groupId]))).rejects.toThrow(/NOT_ADMIN/);
+    await asUser(LINH, (tx) => tx.query(`select clear_trip_money($1)`, [groupId]));
+
+    const left = await db.query<{ bills: string; payments: string }>(
+      `select (select count(*) from bills where group_id = $1) as bills, (select count(*) from settlements where group_id = $1) as payments`,
+      [groupId],
+    );
+    expect([Number(left.rows[0].bills), Number(left.rows[0].payments)]).toEqual([0, 0]);
+    expect(await balances(LINH, groupId)).toEqual({ An: 0, Linh: 0, 'Minh (guest)': 0 });
+    const news = await db.query<{ kind: string }>(
+      `select kind from trip_events where group_id = $1 and kind in ('bill_deleted', 'payment_deleted', 'money_cleared')`,
+      [groupId],
+    );
+    expect(news.rows.map((r) => r.kind)).toEqual(['money_cleared']);
+  });
+});

@@ -36,6 +36,8 @@ import {
 } from '@/lib/ledger';
 import { useTripLive } from '@/lib/live';
 import { dateChoices } from '@/lib/dates';
+import { withShares } from '@/lib/impact';
+import { useBillImpact } from '@/lib/use-bill-impact';
 import { formerOnBill } from '@/lib/people';
 import { confirmAction } from '@/lib/platform';
 import { describeEditors } from '@/lib/presence';
@@ -134,6 +136,7 @@ function BillForm({
   // People on this bill who have left the trip: their share is locked until they're brought back.
   const former = existing ? formerOnBill(members, existing) : [];
   const save = useSaveBill(tripId);
+  const impact = useBillImpact(tripId, myMemberId);
   const pin = usePinBill(tripId);
   const [activityId, setActivityId] = useState<string | null>(existing ? existing.itinerary_item_id : (pinTo ?? null));
   const editable = !existing || existing.split_mode !== 'itemized';
@@ -204,6 +207,11 @@ function BillForm({
   async function onSave() {
     setAttempted(true);
     if (!split.ok || !dateOk || !payer) return;
+    // Once people have paid, an edit can mean money going back: say so first.
+    if (existing && impact.hasPayments) {
+      const preview = impact.describe(existing.id, withShares(existing, payer, split.shares));
+      if (preview && preview.changes > 0 && !(await confirmAction('Save these changes?', preview.text, 'Save changes'))) return;
+    }
     let savedId: string;
     try {
       savedId = await save.mutateAsync({
@@ -418,7 +426,14 @@ function BillForm({
           Paid by {nameOf(existing.paid_by_member_id)}. Changes update everyone&apos;s balances right away.
         </ThemedText>
       ) : null}
-      <BillEndActions tripId={tripId} existing={existing} former={former} dirty={dirty} beforeLeave={leaving} />
+      <BillEndActions
+        tripId={tripId}
+        existing={existing}
+        former={former}
+        dirty={dirty}
+        beforeLeave={leaving}
+        myMemberId={myMemberId}
+      />
     </Screen>
   );
 }

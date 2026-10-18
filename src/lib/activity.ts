@@ -12,7 +12,8 @@ export type TripEventKind =
   | 'member_removed'
   | 'member_returned'
   | 'activity_added'
-  | 'activity_deleted';
+  | 'activity_deleted'
+  | 'money_cleared';
 
 export interface TripEvent {
   id: string;
@@ -20,7 +21,16 @@ export interface TripEvent {
   kind: TripEventKind;
   subject: string | null;
   amount_cents: number | null;
-  details: { bill_id?: string; activity_id?: string; from?: string; to?: string; day?: number; member?: string };
+  details: {
+    bill_id?: string;
+    activity_id?: string;
+    from?: string;
+    to?: string;
+    day?: number;
+    member?: string;
+    bills?: number;
+    payments?: number;
+  };
   created_at: string;
 }
 
@@ -59,6 +69,11 @@ export function describeEvent(e: TripEvent, nameOf: (memberId: string) => string
       return `${actor} added ${what} to day ${e.details.day ?? 1} of the plan`;
     case 'activity_deleted':
       return `${actor} removed ${what} from the plan`;
+    case 'money_cleared': {
+      const bills = e.details.bills ?? 0;
+      const payments = e.details.payments ?? 0;
+      return `${actor} started over: cleared ${bills} ${bills === 1 ? 'bill' : 'bills'} and ${payments} ${payments === 1 ? 'payment' : 'payments'}`;
+    }
     default:
       return `${actor} made a change`;
   }
