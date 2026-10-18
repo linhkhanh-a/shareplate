@@ -77,6 +77,7 @@ export const keys = {
   payments: (id: string) => ['payments', id] as const,
   itinerary: (id: string) => ['itinerary', id] as const,
   events: (id: string) => ['events', id] as const,
+  removedPayments: (id: string) => ['removed-payments', id] as const,
   lastSeen: (id: string) => ['last-seen', id] as const,
   unread: (uid: string) => ['unread', uid] as const,
   invitePreview: (token: string) => ['invite-preview', token] as const,
@@ -301,7 +302,27 @@ export function useRemoveMember(tripId: string) {
         .eq('id', memberId);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.members(tripId) }),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: keys.members(tripId) }),
+        qc.invalidateQueries({ queryKey: keys.events(tripId) }),
+      ]),
+  });
+}
+
+/** Puts someone who left back on the trip (admins only). */
+export function useBringBack(tripId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (memberId: string) => {
+      const { error } = await supabase.rpc('bring_back_member', { p_member_id: memberId });
+      if (error) throw error;
+    },
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: keys.members(tripId) }),
+        qc.invalidateQueries({ queryKey: keys.events(tripId) }),
+      ]),
   });
 }
 
@@ -403,6 +424,8 @@ export interface Payment {
   amount_cents: number;
   settled_on: string;
   created_at: string;
+  /** The account that recorded it (null for older payments or deleted accounts). */
+  created_by: string | null;
 }
 
 /** What the bill editor sends to the database. */
@@ -462,7 +485,7 @@ export function usePayments(tripId: string) {
     queryFn: async (): Promise<Payment[]> => {
       const { data, error } = await supabase
         .from('settlements')
-        .select('id, from_member_id, to_member_id, amount_cents, settled_on, created_at')
+        .select('id, from_member_id, to_member_id, amount_cents, settled_on, created_at, created_by')
         .eq('group_id', tripId)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -500,16 +523,8 @@ export function useDeleteBill(tripId: string) {
       // Tidy up the receipt photo too; the bill is gone either way.
       if (photo) await supabase.storage.from('receipts').remove([photo]);
     },
-    // Disappear right away; put it back if the delete fails.
-    onMutate: async (billId) => {
-      await qc.cancelQueries({ queryKey: keys.bills(tripId) });
-      const previous = qc.getQueryData<Bill[]>(keys.bills(tripId));
-      qc.setQueryData<Bill[]>(keys.bills(tripId), (bills) => bills?.filter((b) => b.id !== billId));
-      return { previous };
-    },
-    onError: (_error, _billId, context) => {
-      if (context?.previous) qc.setQueryData(keys.bills(tripId), context.previous);
-    },
+    // Not removed from the list ahead of time: the bill screen stays open while
+    // deleting, so if the database refuses, the reason is shown right there.
     onSettled: () => invalidateMoney(qc, tripId),
   });
 }
@@ -531,6 +546,7 @@ export function useRecordPayment(tripId: string) {
         ...p,
         settled_on: now.toISOString().slice(0, 10),
         created_at: now.toISOString(),
+        created_by: null,
       };
       qc.setQueryData<Payment[]>(keys.payments(tripId), (payments) => [pending, ...(payments ?? [])]);
       return { previous };
@@ -546,8 +562,10 @@ export function useDeletePayment(tripId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (paymentId: string) => {
-      const { error } = await supabase.from('settlements').delete().eq('id', paymentId);
+      const { data, error } = await supabase.from('settlements').delete().eq('id', paymentId).select('id');
       if (error) throw error;
+      // Row level security hides payments you can't remove instead of raising an error.
+      if (!data || data.length === 0) throw new Error('PAYMENT_NOT_REMOVED');
     },
     onMutate: async (paymentId) => {
       await qc.cancelQueries({ queryKey: keys.payments(tripId) });
@@ -558,7 +576,30 @@ export function useDeletePayment(tripId: string) {
     onError: (_error, _paymentId, context) => {
       if (context?.previous) qc.setQueryData(keys.payments(tripId), context.previous);
     },
-    onSettled: () => invalidateMoney(qc, tripId),
+    onSettled: () =>
+      Promise.all([
+        invalidateMoney(qc, tripId),
+        qc.invalidateQueries({ queryKey: keys.removedPayments(tripId) }),
+        qc.invalidateQueries({ queryKey: keys.events(tripId) }),
+      ]),
+  });
+}
+
+/** Payments someone removed, newest first, so a removal never goes unnoticed. */
+export function useRemovedPayments(tripId: string) {
+  return useQuery({
+    queryKey: keys.removedPayments(tripId),
+    queryFn: async (): Promise<TripEvent[]> => {
+      const { data, error } = await supabase
+        .from('trip_events')
+        .select('id, actor_member_id, kind, subject, amount_cents, details, created_at')
+        .eq('group_id', tripId)
+        .eq('kind', 'payment_deleted')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      return (data as TripEvent[]).map((e) => ({ ...e, amount_cents: e.amount_cents === null ? null : n(e.amount_cents) }));
+    },
   });
 }
 

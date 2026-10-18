@@ -376,3 +376,26 @@ total matches without the tax but not with it). Either way the tax is set to
 0 and the note says why. On the review screen, if the total is off by exactly
 the tax, the message says the tax looks included and offers a one-tap
 "Tax is already included" fix.
+
+## 53. People who leave a trip stay at $0.00, and can be brought back
+
+Leaving or being removed already required a $0.00 balance, but nothing kept
+it that way afterwards: undoing one of their payments, or editing or deleting
+a bill they were on, quietly put money back on someone who was no longer in
+the trip. The database now checks, at the end of every change to bills,
+shares and payments, that everyone who has left is still at exactly $0.00,
+and refuses the change otherwise. Edits that don't move their balance (a new
+title, money moved between people still on the trip) still go through. An
+admin can bring someone back (Settle up, People, or the bill itself), make
+the change, and remove them again once they're back to $0.00. Older trips
+already in this state show the people involved at the top of Settle up with
+a Bring back button.
+
+## 54. Payments are removed, not undone, and only by the people involved
+
+Any member could delete any payment, and it vanished without a trace. Now
+only the payer, the receiver, whoever recorded it, or an admin can remove a
+payment (enforced in the database), nobody edits one in place, and every
+removal is listed under "Removed payments" in Settle up with who did it.
+Deleting a bill or a payment no longer hides it from the screen before the
+database agrees, so a refusal is always explained.

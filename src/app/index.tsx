@@ -77,7 +77,7 @@ function TripRow({ summary, unread }: { summary: TripSummary; unread: number }) 
           {trip.name}
         </ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
-          {trip.mode === 'quick' ? 'Quick split with guests' : 'Everyone signs in'}
+          {trip.mode === 'quick' ? 'Quick split' : 'Group trip'}
         </ThemedText>
       </View>
       {unread > 0 ? <Pill label={`${unread > 99 ? '99+' : unread} new`} tone="accent" /> : null}

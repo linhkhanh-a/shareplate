@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { FormerOnBillNotice } from '@/components/former-on-bill';
 import { PlanPicker } from '@/components/plan-picker';
 import { TopBar } from '@/components/top-bar';
 import {
@@ -34,6 +35,7 @@ import {
 } from '@/lib/ledger';
 import { useTripLive } from '@/lib/live';
 import { confirmAction } from '@/lib/platform';
+import { formerOnBill } from '@/lib/people';
 import { describeEditors } from '@/lib/presence';
 import { useBills, useDeleteBill, useMembers, usePinBill, useSaveBill, type Bill, type Member } from '@/lib/queries';
 import { formatCents } from '@/money';
@@ -131,6 +133,9 @@ function BillForm({
     return () => setEditing(null);
   }, [existingId, setEditing]);
   const otherEditors = existingId ? editorsOf(existingId) : [];
+  const isAdmin = members.some((m) => m.id === myMemberId && m.role === 'admin' && !m.left_at);
+  // People on this bill who have left the trip: their share is locked until they're brought back.
+  const former = existing ? formerOnBill(members, existing) : [];
   const save = useSaveBill(tripId);
   const del = useDeleteBill(tripId);
   const pin = usePinBill(tripId);
@@ -249,6 +254,8 @@ function BillForm({
       <ThemedText type="title" accessibilityRole="header">
         {existing ? 'Edit bill' : 'New bill'}
       </ThemedText>
+
+      <FormerOnBillNotice tripId={tripId} people={former} canManage={isAdmin} />
 
       {!editable ? <Notice>Scanned bills will be editable from the receipt screen in a later update.</Notice> : null}
 
@@ -388,7 +395,18 @@ function BillForm({
 
       {existing ? (
         <View style={{ gap: Spacing.two }}>
-          <Button label="Delete bill" variant="danger" onPress={onDelete} loading={del.isPending} />
+          <Button
+            label="Delete bill"
+            variant="danger"
+            onPress={onDelete}
+            loading={del.isPending}
+            disabled={former.length > 0}
+          />
+          {former.length > 0 ? (
+            <ThemedText type="small" themeColor="textSecondary">
+              To delete this bill, bring {former.map((m) => m.display_name).join(' and ')} back first.
+            </ThemedText>
+          ) : null}
           {del.isError ? <Notice tone="error">{friendlyError(del.error)}</Notice> : null}
           <ThemedText type="small" themeColor="textSecondary">
             Paid by {nameOf(existing.paid_by_member_id)}. Changes update everyone&apos;s balances right away.

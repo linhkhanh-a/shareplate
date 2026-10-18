@@ -60,7 +60,7 @@ const bills = [
   bill('b2', '2026-10-23', 'an', [['an', 600], ['huong', 1200]], { title: '=Grab', split_mode: 'exact', category: 'Transport' }),
 ];
 const payments: Payment[] = [
-  { id: 'p1', from_member_id: 'huong', to_member_id: 'linh', amount_cents: 1000, settled_on: '2026-10-25', created_at: '' },
+  { id: 'p1', from_member_id: 'huong', to_member_id: 'linh', amount_cents: 1000, settled_on: '2026-10-25', created_at: '', created_by: null },
 ];
 
 const input: ExportInput = {

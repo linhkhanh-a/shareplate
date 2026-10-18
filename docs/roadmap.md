@@ -81,5 +81,6 @@ link once hosting is set up, and a "try this" checklist.
 - [x] In-app notifications: "What's new" in each trip, "3 new" badges on your trips
 - [ ] Push notifications on iPhone (comes with the iOS build)
 - [ ] End-to-end tests in CI
+- [x] People who left stay at $0.00, Bring back, and safer payment removal (decisions 53 and 54)
 - [x] Website launch polish: app icon, link previews, add to home screen, "new version ready" banner, security headers
 - [ ] iPhone app: build setup, Sign in with Apple, TestFlight (waiting on an Apple Developer account)

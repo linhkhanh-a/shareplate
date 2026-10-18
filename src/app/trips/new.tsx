@@ -13,13 +13,13 @@ import { useCreateTrip, type TripMode } from '@/lib/queries';
 const MODES: { value: TripMode; title: string; detail: string }[] = [
   {
     value: 'registered',
-    title: 'Everyone signs in',
-    detail: 'Best for longer trips. Friends join with an invite link and see the bills and balances themselves.',
+    title: 'Group trip',
+    detail: 'Everyone signs in. Best for longer trips: friends join with an invite link and see the bills and balances themselves.',
   },
   {
     value: 'quick',
-    title: 'Quick split with guests',
-    detail: 'Best for one dinner or a weekend. You add people by name and send them a summary at the end.',
+    title: 'Quick split',
+    detail: 'No accounts needed. Best for one dinner or a weekend: you add people by name and send them a summary at the end.',
   },
 ];
 

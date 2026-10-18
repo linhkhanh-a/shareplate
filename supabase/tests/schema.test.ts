@@ -1004,3 +1004,161 @@ describe("what's new", () => {
   });
 });
 
+
+describe('former members', () => {
+  const pay = (userId: string, groupId: string, from: string, to: string, cents: number) =>
+    asUser(userId, async (tx) => {
+      const r = await tx.query<{ id: string }>(
+        `insert into settlements (group_id, from_member_id, to_member_id, amount_cents) values ($1, $2, $3, $4) returning id`,
+        [groupId, from, to, cents],
+      );
+      return r.rows[0].id;
+    });
+  const removePayment = (userId: string, paymentId: string) =>
+    asUser(userId, async (tx) => (await tx.query(`delete from settlements where id = $1 returning id`, [paymentId])).rows.length);
+  const remove = (memberId: string) =>
+    asUser(LINH, (tx) => tx.query(`update group_members set left_at = now() where id = $1`, [memberId]));
+  const bringBack = (userId: string, memberId: string) =>
+    asUser(userId, (tx) => tx.query(`select bring_back_member($1)`, [memberId]));
+  const save = (userId: string, bill: Record<string, unknown>) =>
+    asUser(userId, async (tx) => (await tx.query<{ id: string }>(`select save_bill($1::jsonb) as id`, [JSON.stringify(bill)])).rows[0].id);
+
+  /** Linh paid $30 for three; the guest paid Linh back and was removed from the trip. */
+  async function guestPaidAndRemoved() {
+    const trip = await createTrip();
+    const { groupId, linhId, anId, guestId } = trip;
+    const bill = {
+      group_id: groupId,
+      paid_by_member_id: linhId,
+      title: 'Hotpot',
+      split_mode: 'equal',
+      total_cents: 3000,
+      participants: [
+        { member_id: linhId, amount_cents: 1000 },
+        { member_id: anId, amount_cents: 1000 },
+        { member_id: guestId, amount_cents: 1000 },
+      ],
+    };
+    const billId = await save(LINH, bill);
+    const paymentId = await pay(LINH, groupId, guestId, linhId, 1000);
+    await remove(guestId);
+    return { ...trip, bill, billId, paymentId };
+  }
+
+  it('refuses to undo a payment that would put money back on someone who left', async () => {
+    const { groupId, paymentId } = await guestPaidAndRemoved();
+    await expect(removePayment(LINH, paymentId)).rejects.toThrow(/FORMER_MEMBER: Minh \(guest\) has left the trip.*-1000 cents/);
+    // Nothing changed: the payment is still there and everyone is where they were.
+    expect(await balances(LINH, groupId)).toEqual({ An: -1000, Linh: 1000, 'Minh (guest)': 0 });
+  });
+
+  it('refuses bill changes that move a former member’s share, but allows the rest', async () => {
+    const { groupId, linhId, anId, guestId, bill, billId } = await guestPaidAndRemoved();
+    // Changing the guest's share would leave them owing money.
+    await expect(
+      save(LINH, {
+        ...bill,
+        id: billId,
+        expected_version: 1,
+        total_cents: 3600,
+        participants: [
+          { member_id: linhId, amount_cents: 1200 },
+          { member_id: anId, amount_cents: 1200 },
+          { member_id: guestId, amount_cents: 1200 },
+        ],
+      }),
+    ).rejects.toThrow(/FORMER_MEMBER/);
+    // So would deleting the bill.
+    await expect(asUser(AN, (tx) => tx.query(`delete from bills where id = $1`, [billId]))).rejects.toThrow(/FORMER_MEMBER/);
+    // A new title, or moving money only between people still on the trip, is fine.
+    await save(AN, {
+      ...bill,
+      id: billId,
+      expected_version: 1,
+      title: 'Hotpot night',
+      split_mode: 'exact',
+      participants: [
+        { member_id: linhId, share_input: 500, amount_cents: 500 },
+        { member_id: anId, share_input: 1500, amount_cents: 1500 },
+        { member_id: guestId, share_input: 1000, amount_cents: 1000 },
+      ],
+    });
+    expect(await balances(LINH, groupId)).toEqual({ An: -1500, Linh: 1500, 'Minh (guest)': 0 });
+  });
+
+  it('lets an admin bring someone back, after which the change goes through', async () => {
+    const { groupId, guestId, paymentId } = await guestPaidAndRemoved();
+    await expect(bringBack(AN, guestId)).rejects.toThrow(/NOT_ADMIN/);
+    await expect(bringBack(OUTSIDER, guestId)).rejects.toThrow(/NOT_MEMBER/);
+    await bringBack(LINH, guestId);
+    expect(await removePayment(LINH, paymentId)).toBe(1);
+    expect(await balances(LINH, groupId)).toEqual({ An: -1000, Linh: 2000, 'Minh (guest)': -1000 });
+    // And they can't be removed again until they're back to $0.
+    await expect(remove(guestId)).rejects.toThrow(/UNSETTLED_BALANCE/);
+  });
+
+  it('still lets payments that keep a former member at $0, and deleting the whole trip', async () => {
+    const { groupId, linhId, anId } = await guestPaidAndRemoved();
+    await pay(AN, groupId, anId, linhId, 1000);
+    await asUser(LINH, (tx) => tx.query(`delete from groups where id = $1`, [groupId]));
+    const left = await db.query<{ n: string }>(`select count(*) as n from group_members where group_id = $1`, [groupId]);
+    expect(Number(left.rows[0].n)).toBe(0);
+  });
+
+  it('records being removed and being brought back, with who did it', async () => {
+    const { groupId, linhId, anId, guestId } = await guestPaidAndRemoved();
+    await bringBack(LINH, guestId);
+    // An pays up and leaves on their own.
+    await pay(AN, groupId, anId, linhId, 1000);
+    await asUser(AN, (tx) => tx.query(`select leave_group($1)`, [groupId]));
+    const log = await asUser(LINH, async (tx) => {
+      const r = await tx.query<{ kind: string; subject: string; actor: string | null }>(
+        `select e.kind, e.subject, m.display_name as actor
+         from trip_events e left join group_members m on m.id = e.actor_member_id
+         where e.group_id = $1 and e.kind in ('member_left', 'member_removed', 'member_returned') order by e.created_at`,
+        [groupId],
+      );
+      return r.rows.map((x) => [x.kind, x.subject, x.actor]);
+    });
+    expect(log).toEqual([
+      ['member_removed', 'Minh (guest)', 'Linh'],
+      ['member_returned', 'Minh (guest)', 'Linh'],
+      ['member_left', 'An', 'An'],
+    ]);
+  });
+});
+
+describe('removing payments', () => {
+  it('only lets the payer, the receiver, whoever recorded it, or an admin remove a payment', async () => {
+    const { groupId, linhId, anId, guestId } = await createTrip();
+    const record = (userId: string, from: string, to: string) =>
+      asUser(userId, async (tx) => {
+        const r = await tx.query<{ id: string }>(
+          `insert into settlements (group_id, from_member_id, to_member_id, amount_cents) values ($1, $2, $3, 500) returning id`,
+          [groupId, from, to],
+        );
+        return r.rows[0].id;
+      });
+    const removeAs = (userId: string, id: string) =>
+      asUser(userId, async (tx) => (await tx.query(`delete from settlements where id = $1 returning id`, [id])).rows.length);
+
+    // Linh recorded the guest paying Linh: An isn't involved, didn't record it, and isn't an admin.
+    const guestToLinh = await record(LINH, guestId, linhId);
+    expect(await removeAs(AN, guestToLinh)).toBe(0);
+    expect(await removeAs(OUTSIDER, guestToLinh)).toBe(0);
+    expect(await removeAs(LINH, guestToLinh)).toBe(1);
+
+    // An is the one receiving the money.
+    expect(await removeAs(AN, await record(LINH, guestId, anId))).toBe(1);
+    // An recorded it.
+    expect(await removeAs(AN, await record(AN, guestId, linhId))).toBe(1);
+    // Linh is an admin.
+    expect(await removeAs(LINH, await record(AN, guestId, anId))).toBe(1);
+
+    // Nobody edits a payment in place.
+    const id = await record(LINH, linhId, anId);
+    await expect(
+      asUser(LINH, (tx) => tx.query(`update settlements set amount_cents = 9999 where id = $1`, [id])),
+    ).rejects.toThrow(/permission denied/);
+  });
+});

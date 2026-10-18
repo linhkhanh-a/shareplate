@@ -9,6 +9,8 @@ export type TripEventKind =
   | 'member_joined'
   | 'guest_added'
   | 'member_left'
+  | 'member_removed'
+  | 'member_returned'
   | 'activity_added'
   | 'activity_deleted';
 
@@ -40,7 +42,7 @@ export function describeEvent(e: TripEvent, nameOf: (memberId: string) => string
       const from = who(e.details.from);
       const to = who(e.details.to);
       const paid = `${from} paid ${to === 'You' ? 'you' : to} ${amount}`;
-      if (e.kind === 'payment_deleted') return `${actor} undid a payment: ${paid}`;
+      if (e.kind === 'payment_deleted') return `${actor} removed a payment: ${paid}`;
       return e.actor_member_id && e.actor_member_id !== e.details.from ? `${paid} (recorded by ${actor === 'You' ? 'you' : actor})` : paid;
     }
     case 'member_joined':
@@ -49,6 +51,10 @@ export function describeEvent(e: TripEvent, nameOf: (memberId: string) => string
       return `${actor} added ${e.subject ?? 'a guest'} as a guest`;
     case 'member_left':
       return `${e.subject ?? 'Someone'} left the trip`;
+    case 'member_removed':
+      return `${actor} removed ${e.subject ?? 'someone'} from the trip`;
+    case 'member_returned':
+      return `${actor} brought ${e.subject ?? 'someone'} back to the trip`;
     case 'activity_added':
       return `${actor} added ${what} to day ${e.details.day ?? 1} of the plan`;
     case 'activity_deleted':

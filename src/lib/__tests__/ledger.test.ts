@@ -117,7 +117,7 @@ describe('tripMoney', () => {
   it('turns bills and payments into balances and a Settle Up plan', () => {
     const bills = [bill('linh', [['linh', 2000], ['an', 2000], ['minh', 2000]]), bill('an', [['minh', 900]])];
     const payments: Payment[] = [
-      { id: 'p', from_member_id: 'minh', to_member_id: 'linh', amount_cents: 1000, settled_on: '', created_at: '' },
+      { id: 'p', from_member_id: 'minh', to_member_id: 'linh', amount_cents: 1000, settled_on: '', created_at: '', created_by: null },
     ];
     const money = tripMoney(bills, payments, ['linh', 'an', 'minh']);
     expect(Object.fromEntries(money.balances)).toEqual({ linh: 3000, an: -1100, minh: -1900 });
