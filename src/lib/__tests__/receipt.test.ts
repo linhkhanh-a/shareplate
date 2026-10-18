@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { checkDraft, draftFromBill, draftFromScan, emptyDraft, itemizedPayload, type ReceiptDraft } from '@/lib/receipt';
+import {
+  checkDraft,
+  draftFromBill,
+  draftFromScan,
+  emptyDraft,
+  itemizedPayload,
+  looksLikeDiscount,
+  moveItemToDiscount,
+  type ReceiptDraft,
+} from '@/lib/receipt';
 
 const scan = {
   vendor: 'Bếp Việt',
@@ -98,5 +107,42 @@ describe('scan wizard drafts', () => {
     const d = emptyDraft({ payerId: 'linh', date: '2026-10-17' });
     expect(d.items).toHaveLength(1);
     expect(checkDraft(d).itemsOk).toBe(false);
+  });
+
+  it('says how far the items are from the printed subtotal, and accepts either style of subtotal', () => {
+    // Printed before discounts: matches.
+    expect(checkDraft(draftFromScan(scan, base)).mismatches).toEqual([]);
+    // Printed after discounts: also matches.
+    expect(checkDraft(draftFromScan({ ...scan, subtotal_cents: 3000 }, base)).mismatches).toEqual([]);
+    // A $4 TPD line read as an item: says by how much.
+    const withTpd = draftFromScan(
+      { ...scan, subtotal_cents: 3000, total_cents: null, items: [...scan.items, { name: 'TPD/1234567', price_cents: 400 }] },
+      base,
+    );
+    expect(checkDraft(withTpd).mismatches).toEqual([
+      "Items come to $34.00 after discounts, $4.00 more than the receipt's subtotal of $30.00. " +
+        "Look for discount lines read as items (they'd add up to $2.00 or $4.00), or a misread price.",
+    ]);
+  });
+
+  it('moves a discount line out of the items with one tap', () => {
+    const d = draftFromScan(
+      // The receipt prints its subtotal after both discounts ($6 + $4): $26.00, total $37.40.
+      { ...scan, subtotal_cents: 2600, total_cents: 3740, items: [...scan.items, { name: 'TPD/1234567', price_cents: 400 }] },
+      base,
+    );
+    expect(checkDraft(d).mismatches).toHaveLength(2);
+    const tpd = d.items[3];
+    expect(looksLikeDiscount(tpd.name)).toBe(true);
+    expect(looksLikeDiscount('Spring rolls')).toBe(false);
+
+    const moved = moveItemToDiscount(d, tpd.key);
+    expect(moved.items.map((i) => i.name)).toEqual(['Pho', 'Banh mi', 'Spring rolls']);
+    expect(moved.discount).toBe('10.00');
+    const c = checkDraft(moved);
+    expect(c.totals).toMatchObject({ subtotal: 3600, discount: 1000, total: 3740 });
+    expect(c.mismatches).toEqual([]);
+    // Unknown keys leave the draft alone.
+    expect(moveItemToDiscount(d, 'nope')).toBe(d);
   });
 });

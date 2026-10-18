@@ -70,7 +70,11 @@ Return JSON only, matching this shape:
 Rules:
 - line_total is the price printed on that line (quantity already multiplied in). Plain numbers, no currency signs.
 - List every purchased item once. Do not list subtotal, tax, tip, service charge, total, payment, change or card lines as items.
-- discount is the total of all discounts, vouchers and coupons as a POSITIVE number.
+- Lines that lower the price are discounts, not items: instant savings, coupons, vouchers, promos, member savings,
+  markdowns, store codes like "TPD/123456", and any amount printed with a minus (4.99-, -4.99) or in parentheses.
+  Do not list them as items; add them up into discount.
+- discount is the total of all discounts as a POSITIVE number.
+- subtotal is exactly what the receipt prints next to SUBTOTAL (some stores print it after discounts).
 - tax is the total of all taxes. tip includes service charges and gratuity.
 - The receipt may be blurry, crumpled or handwritten: give your best reading, and use null when a value is not printed.
 - category: Food for restaurants, cafes, groceries and drinks; Transport for taxis, rides, fuel, tickets; Lodging for hotels and stays; Activities for tours, museums, events; Shopping for stores; otherwise Other.
@@ -96,12 +100,23 @@ export function toCents(value: unknown): number | null {
   if (typeof value === 'number') {
     n = value;
   } else {
-    const cleaned = String(value).replace(/[^0-9.-]/g, '');
-    if (!/\d/.test(cleaned)) return null;
-    n = Number(cleaned);
+    const text = String(value).trim();
+    // Receipts print negatives as "-4.99", "4.99-" or "(4.99)".
+    const negative = /^-|-$|^\(.*\)$/.test(text);
+    const digits = text.replace(/[^0-9.]/g, '');
+    if (!/\d/.test(digits)) return null;
+    n = Number(digits) * (negative ? -1 : 1);
   }
   if (!Number.isFinite(n)) return null;
   return Math.round(n * 100);
+}
+
+/** Names that stores use for money taken off, e.g. Costco's "TPD/253667". */
+const DISCOUNT_NAME =
+  /^(tpd\b|instant sav|inst sav|coupons?\b|discount\b|disc\b|promo\b|member sav|savings\b|markdown\b|vouchers?\b|mfr cpn|cpn\b)/i;
+
+export function looksLikeDiscount(name: string): boolean {
+  return DISCOUNT_NAME.test(name.trim());
 }
 
 /** Cleans up whatever the model returned into amounts the app can trust to edit. */
@@ -114,6 +129,7 @@ export function normalizeReceipt(raw: unknown): ScanResult {
   const warnings: string[] = [];
   const items: ScannedItem[] = [];
   let extraDiscount = 0;
+  const movedDiscounts: string[] = [];
 
   for (const entry of Array.isArray(r.items) ? r.items : []) {
     const item = (entry ?? {}) as Record<string, unknown>;
@@ -125,9 +141,10 @@ export function normalizeReceipt(raw: unknown): ScanResult {
       warnings.push(`Couldn't read the price for "${name || 'an item'}".`);
       continue;
     }
-    if (price < 0) {
-      // A discount printed as a line item.
-      extraDiscount += -price;
+    if (price < 0 || looksLikeDiscount(name)) {
+      // A discount printed as a line item (with or without a minus sign).
+      extraDiscount += Math.abs(price);
+      movedDiscounts.push(name || 'a discount line');
       continue;
     }
     const qty = typeof item.quantity === 'number' && item.quantity > 1 ? Math.round(item.quantity) : 1;
@@ -144,7 +161,14 @@ export function normalizeReceipt(raw: unknown): ScanResult {
 
   const itemsSum = items.reduce((s, i) => s + i.price_cents, 0);
   if (items.length === 0) warnings.push("Couldn't find any items. Add them by hand.");
-  if (subtotal !== null && items.length > 0 && subtotal !== itemsSum) {
+  if (movedDiscounts.length > 0) {
+    warnings.push(
+      `Counted ${movedDiscounts.length === 1 ? 'this line as a discount' : `${movedDiscounts.length} lines as discounts`}, not items: ` +
+        `${movedDiscounts.slice(0, 4).join(', ')}${movedDiscounts.length > 4 ? '…' : ''}. Check the discount on the next step.`,
+    );
+  }
+  // Some stores print the subtotal before discounts, others after.
+  if (subtotal !== null && items.length > 0 && subtotal !== itemsSum && subtotal !== itemsSum - discount) {
     warnings.push('The items don’t add up to the subtotal printed on the receipt. Check for a missed or misread line.');
   }
   if (total !== null && items.length > 0 && total !== itemsSum - discount + tax + tip) {

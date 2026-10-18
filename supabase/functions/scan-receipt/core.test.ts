@@ -37,8 +37,56 @@ describe('normalizeReceipt', () => {
       tax_cents: 240,
       tip_cents: 900,
       total_cents: 4140,
-      warnings: [],
+      warnings: ['Counted this line as a discount, not items: Voucher. Check the discount on the next step.'],
     });
+  });
+
+  it('treats Costco-style TPD lines and trailing-minus amounts as discounts', () => {
+    const r = normalizeReceipt({
+      is_receipt: true,
+      items: [
+        { name: 'KS Paper Towel', line_total: 23.99 },
+        { name: 'TPD/1234567', line_total: 4.0 },
+        { name: 'Rotisserie Chicken', line_total: 4.99 },
+        { name: 'Instant Savings', line_total: '1.50-' },
+        { name: 'Olive oil', line_total: 18 },
+      ],
+      subtotal: 46.98,
+      tax: 0,
+      total: 41.48,
+    });
+    expect(r.items.map((i) => i.name)).toEqual(['KS Paper Towel', 'Rotisserie Chicken', 'Olive oil']);
+    expect(r.discount_cents).toBe(550);
+    expect(r.warnings).toEqual([
+      'Counted 2 lines as discounts, not items: TPD/1234567, Instant Savings. Check the discount on the next step.',
+    ]);
+  });
+
+  it('accepts a subtotal printed after discounts', () => {
+    const r = normalizeReceipt({
+      is_receipt: true,
+      items: [
+        { name: 'Milk', line_total: 10 },
+        { name: 'Eggs', line_total: 6 },
+      ],
+      discount: 2,
+      subtotal: 14,
+      total: 14,
+    });
+    expect(r.warnings).toEqual([]);
+  });
+
+  it('does not mistake ordinary items for discounts', () => {
+    const r = normalizeReceipt({
+      is_receipt: true,
+      items: [
+        { name: 'Discovery Kids Book', line_total: 12 },
+        { name: 'Promotional mug', line_total: 8 },
+        { name: 'Tpdx cable', line_total: 5 },
+      ],
+    });
+    expect(r.items).toHaveLength(3);
+    expect(r.discount_cents).toBe(0);
   });
 
   it('flags totals that don’t add up and prices it couldn’t read', () => {
@@ -68,6 +116,10 @@ describe('helpers', () => {
     expect(toCents('$1,234.56')).toBe(123456);
     expect(toCents('abc')).toBe(null);
     expect(toCents(0.1 + 0.2)).toBe(30);
+    expect(toCents('4.99-')).toBe(-499);
+    expect(toCents('-4.99')).toBe(-499);
+    expect(toCents('(4.99)')).toBe(-499);
+    expect(toCents(-3)).toBe(-300);
   });
 
   it('pulls JSON out of fenced or chatty replies', () => {

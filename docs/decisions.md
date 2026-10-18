@@ -211,3 +211,17 @@ new Supabase key formats) and downloads the photo with the caller's own
 permissions, so storage rules decide whether they may read it. The Gemini key
 never leaves Supabase.
 
+
+## 34. Discount lines printed as items become part of the discount
+
+Stores print discounts as their own lines: Costco's "TPD/1234567", "Instant
+Savings", coupons, and amounts with a minus sign (4.99-, -4.99, (4.99)). The
+reader is told these are discounts, and the function moves any line that is
+negative or named like a discount into the discount, with a note saying which
+lines it moved. If one still slips through, the review screen marks it with a
+**Move to discount** button.
+
+Receipts print the subtotal either before or after discounts, so both count as
+a match. When neither matches, the review screen says how far off the items are
+and what to look for. A discount read as an item throws a printed-after-discount
+subtotal off by twice its amount, so the message names both possible amounts.
