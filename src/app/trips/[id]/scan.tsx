@@ -544,6 +544,14 @@ function TotalsStep({
               {m}
             </ThemedText>
           ))}
+          {check.taxLooksIncluded ? (
+            <Button
+              variant="secondary"
+              label="Tax is already included"
+              accessibilityHint="Sets tax to zero so it isn't added on top of the prices"
+              onPress={() => update({ tax: '' })}
+            />
+          ) : null}
         </Notice>
       ) : null}
 
