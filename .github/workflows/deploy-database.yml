@@ -49,5 +49,8 @@ jobs:
       - name: Deploy the receipt reader (edge function)
         run: supabase functions deploy scan-receipt --project-ref "$SUPABASE_PROJECT_ID"
 
+      - name: Deploy place search (edge function)
+        run: supabase functions deploy place-search --project-ref "$SUPABASE_PROJECT_ID"
+
       - name: Show which migrations are live
         run: supabase migration list --password "$SUPABASE_DB_PASSWORD"

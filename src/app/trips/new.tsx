@@ -83,6 +83,7 @@ export default function NewTripScreen() {
               key={m.value}
               accessibilityRole="radio"
               accessibilityState={{ checked: selected }}
+              aria-checked={selected}
               onPress={() => setMode(m.value)}
               style={[
                 styles.mode,

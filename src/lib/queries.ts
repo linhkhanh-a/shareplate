@@ -191,6 +191,25 @@ export function useRenameTrip(id: string) {
   });
 }
 
+export interface FoundPlace {
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+}
+
+/** Finds places with free OpenStreetMap search (through the place-search function). */
+export async function searchPlaces(query: string, near: { lat: number; lng: number } | null): Promise<FoundPlace[]> {
+  const { data, error } = await supabase.functions.invoke('place-search', { body: { query, near } });
+  if (error) {
+    // The function explains itself in the body ("Type at least 2 letters…").
+    const context = (error as { context?: Response }).context;
+    const body = context && typeof context.json === 'function' ? await context.json().catch(() => null) : null;
+    throw new Error(body?.message ?? "Place search isn't answering right now. Type the place name instead.");
+  }
+  return (data as { places: FoundPlace[] }).places ?? [];
+}
+
 /** Admins choose the currency the trip's amounts are shown in (no conversion). */
 export function useSetTripCurrency(id: string) {
   const qc = useQueryClient();
@@ -750,7 +769,7 @@ export function useItinerary(tripId: string) {
       const { data, error } = await supabase
         .from('itinerary_items')
         .select(
-          'id, day_number, position, start_time, end_time, title, location, notes, proposed_budget_cents, version, created_at',
+          'id, day_number, position, start_time, end_time, title, location, location_address, location_lat, location_lng, notes, proposed_budget_cents, version, created_at',
         )
         .eq('group_id', tripId)
         .order('day_number')

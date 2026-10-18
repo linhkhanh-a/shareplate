@@ -9,7 +9,11 @@ import {
   daysBetween,
   draftFromActivity,
   formatTime,
+  guessHalf,
+  joinTime,
   mapsUrl,
+  planCenter,
+  timeParts,
   moveInList,
   nextPosition,
   outOfTimeOrder,
@@ -140,9 +144,32 @@ describe('budgets', () => {
   });
 });
 
+describe('time boxes with an AM | PM switch', () => {
+  it('splits a time into the clock and AM/PM', () => {
+    expect(timeParts('7:30 PM')).toEqual({ clock: '7:30', half: 'PM' });
+    expect(timeParts('7:30pm')).toEqual({ clock: '7:30', half: 'PM' });
+    expect(timeParts('19:30')).toEqual({ clock: '7:30', half: 'PM' });
+    expect(timeParts('0:15')).toEqual({ clock: '12:15', half: 'AM' });
+    expect(timeParts('7a')).toEqual({ clock: '7', half: 'AM' });
+    expect(timeParts('7')).toEqual({ clock: '7', half: null });
+    expect(timeParts('7:')).toEqual({ clock: '7:', half: null });
+    expect(timeParts('noon')).toEqual({ clock: '12:00', half: 'PM' });
+  });
+
+  it('joins them back, and guesses AM or PM sensibly', () => {
+    expect(joinTime('7:30', 'PM')).toBe('7:30 PM');
+    expect(joinTime(' ', 'PM')).toBe('');
+    expect(parseTime(joinTime('7', 'PM'))).toBe('19:00');
+    expect(guessHalf('9')).toBe('AM');
+    expect(guessHalf('11:30')).toBe('AM');
+    expect(guessHalf('12')).toBe('PM');
+    expect(guessHalf('6:45')).toBe('PM');
+  });
+});
+
 describe('the activity editor', () => {
   it('checks every field and explains what to fix', () => {
-    const bad = checkActivity({ title: ' ', day: 1, start: 'later', end: '', location: '', notes: '', budget: 'abc' });
+    const bad = checkActivity({ title: ' ', day: 1, start: 'later', end: '', location: '', place: null, notes: '', budget: 'abc' });
     expect(bad).toEqual({
       ok: false,
       errors: {
@@ -157,6 +184,7 @@ describe('the activity editor', () => {
       start: '7pm',
       end: '9:30 pm',
       location: ' Chợ Đêm Đà Lạt ',
+      place: { address: 'Nguyễn Thị Minh Khai, Đà Lạt, Vietnam', lat: 11.9429, lng: 108.4372 },
       notes: '',
       budget: '40',
     });
@@ -168,6 +196,9 @@ describe('the activity editor', () => {
         start_time: '19:00',
         end_time: '21:30',
         location: 'Chợ Đêm Đà Lạt',
+        location_address: 'Nguyễn Thị Minh Khai, Đà Lạt, Vietnam',
+        location_lat: 11.9429,
+        location_lng: 108.4372,
         notes: null,
         proposed_budget_cents: 4000,
       },
@@ -177,12 +208,19 @@ describe('the activity editor', () => {
   it('round-trips a saved activity into the editor', () => {
     const a = activity(2, 0, 'Night market', { start_time: '19:00:00', proposed_budget_cents: 1250, location: 'Đà Lạt' });
     const draft = draftFromActivity(a);
-    expect(draft).toEqual({ title: 'Night market', day: 2, start: '7:00 PM', end: '', location: 'Đà Lạt', notes: '', budget: '12.50' });
+    expect(draft).toEqual({ title: 'Night market', day: 2, start: '7:00 PM', end: '', location: 'Đà Lạt', place: null, notes: '', budget: '12.50' });
+    const picked = draftFromActivity({ ...a, location_address: 'Lâm Đồng, Vietnam', location_lat: 11.94, location_lng: 108.44 });
+    expect(picked.place).toEqual({ address: 'Lâm Đồng, Vietnam', lat: 11.94, lng: 108.44 });
     expect(checkActivity(draft)).toMatchObject({ ok: true, fields: { start_time: '19:00', proposed_budget_cents: 1250 } });
   });
 
   it('links places to the right maps app', () => {
     expect(mapsUrl('Chợ Đêm Đà Lạt', 'ios')).toBe('https://maps.apple.com/?q=Ch%E1%BB%A3%20%C4%90%C3%AAm%20%C4%90%C3%A0%20L%E1%BA%A1t');
     expect(mapsUrl('Hoan Kiem Lake', 'web')).toBe('https://www.google.com/maps/search/?api=1&query=Hoan%20Kiem%20Lake');
+    // A place picked from search opens at its exact spot.
+    const spot = { lat: 21.0287, lng: 105.8524 };
+    expect(mapsUrl('Hoan Kiem Lake', 'web', spot)).toBe('https://www.google.com/maps/search/?api=1&query=21.0287%2C105.8524');
+    expect(mapsUrl('Hoan Kiem Lake', 'ios', spot)).toBe('https://maps.apple.com/?ll=21.0287,105.8524&q=Hoan%20Kiem%20Lake');
+    expect(planCenter([])).toBeNull();
   });
 });

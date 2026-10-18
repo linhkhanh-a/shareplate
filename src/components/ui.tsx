@@ -76,6 +76,8 @@ export function Button({ label, variant = 'primary', loading, disabled, style, t
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ disabled: !!isDisabled, busy: !!loading }}
+      aria-disabled={!!isDisabled}
+      aria-busy={!!loading}
       disabled={isDisabled}
       style={({ pressed }) => [
         styles.button,
@@ -256,6 +258,7 @@ export function Chip({ label, selected, onPress }: { label: string; selected: bo
     <Pressable
       accessibilityRole="radio"
       accessibilityState={{ checked: selected }}
+      aria-checked={selected}
       onPress={onPress}
       style={({ pressed }) => [
         chipStyles.chip,
@@ -307,6 +310,7 @@ export function Segmented<T extends string>({
             key={o.value}
             accessibilityRole="radio"
             accessibilityState={{ checked: selected }}
+            aria-checked={selected}
             onPress={() => onChange(o.value)}
             style={[chipStyles.segment, selected && { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <ThemedText

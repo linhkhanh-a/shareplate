@@ -4,9 +4,10 @@ import { Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { DragList } from '@/components/drag-list';
 import { LiveBadge } from '@/components/live-badge';
+import { DateField } from '@/components/date-field';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
-import { Button, Loading, Notice, Screen, TextField } from '@/components/ui';
+import { Button, Loading, Notice, Screen } from '@/components/ui';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
@@ -225,7 +226,11 @@ function ActivityCard({
           variant="quiet"
           label="Map"
           accessibilityLabel={`Open ${a.location} in maps`}
-          onPress={() => void Linking.openURL(mapsUrl(a.location!, Platform.OS))}
+          onPress={() =>
+            void Linking.openURL(
+              mapsUrl(a.location!, Platform.OS, a.location_lat != null && a.location_lng != null ? { lat: a.location_lat, lng: a.location_lng } : null),
+            )
+          }
         />
       ) : null}
       {handle}
@@ -247,10 +252,11 @@ function TripDates({ trip, canEdit }: { trip: TripDetails; canEdit: boolean }) {
     ? `${shortDate(trip.start_date!)} to ${shortDate(trip.end_date!)} · ${daysBetween(trip.start_date, trip.end_date)} days`
     : 'No dates yet';
 
-  const startError = start && !isValidIsoDate(start) ? 'Use year-month-day, like 2026-10-23.' : null;
+  // The date boxes explain dates they can't read; these are the rules about the pair.
+  const startError = start && !isValidIsoDate(start) ? 'Check the first day.' : null;
   const endError =
     end && !isValidIsoDate(end)
-      ? 'Use year-month-day, like 2026-10-26.'
+      ? null
       : start && end && !startError && end < start
         ? 'The last day comes after the first day.'
         : start && end && daysBetween(start, end) > MAX_DAYS
@@ -260,7 +266,7 @@ function TripDates({ trip, canEdit }: { trip: TripDetails; canEdit: boolean }) {
 
   async function onSave() {
     setAttempted(true);
-    if (!start || !end || startError || endError) return;
+    if (!start || !end || startError || endError || !isValidIsoDate(end)) return;
     try {
       await setDates.mutateAsync({ start_date: start, end_date: end });
       setOpen(false);
@@ -301,30 +307,9 @@ function TripDates({ trip, canEdit }: { trip: TripDetails; canEdit: boolean }) {
       </View>
       {open ? (
         <View style={{ gap: Spacing.three }}>
-          <View style={styles.dateRow}>
-            <View style={styles.grow}>
-              <TextField
-                label="First day"
-                placeholder="2026-10-23"
-                value={start}
-                onChangeText={setStart}
-                error={startError}
-                maxLength={10}
-                autoCapitalize="none"
-              />
-            </View>
-            <View style={styles.grow}>
-              <TextField
-                label="Last day"
-                placeholder="2026-10-26"
-                value={end}
-                onChangeText={setEnd}
-                error={endError}
-                maxLength={10}
-                autoCapitalize="none"
-              />
-            </View>
-          </View>
+          <DateField label="First day" value={start} onChange={setStart} hint="Like 10/23 or Oct 23" allowEmpty />
+          <DateField label="Last day" value={end} onChange={setEnd} hint="Like 10/26 or Oct 26" allowEmpty />
+          {endError ? <Notice tone="error">{endError}</Notice> : null}
           {missing ? <Notice tone="error">{missing}</Notice> : null}
           {setDates.isError ? <Notice tone="error">{friendlyError(setDates.error)}</Notice> : null}
           <View style={styles.dateRow}>

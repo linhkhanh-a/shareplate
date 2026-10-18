@@ -1,8 +1,10 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState, type ReactNode } from 'react';
-import { Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { PlaceField } from '@/components/place-field';
 import { ThemedText } from '@/components/themed-text';
+import { TimeField } from '@/components/time-field';
 import { TopBar } from '@/components/top-bar';
 import { Button, Chip, ChipGroup, Loading, Notice, Screen, Section, TextField } from '@/components/ui';
 import { Radius, Spacing } from '@/constants/theme';
@@ -14,9 +16,9 @@ import {
   checkActivity,
   dayLabel,
   draftFromActivity,
-  mapsUrl,
   MAX_DAYS,
   nextPosition,
+  planCenter,
   planDays,
   type Activity,
   type ActivityDraft,
@@ -36,7 +38,7 @@ import {
   type Bill,
   type TripDetails,
 } from '@/lib/queries';
-import { formatCents } from '@/money';
+import { formatCents, normalizeMoneyText } from '@/money';
 
 /** Back to the plan, even when the activity was opened directly from a link. */
 function returnToPlan(tripId: string) {
@@ -90,7 +92,7 @@ export default function ActivityScreen() {
   );
 }
 
-const EMPTY: Omit<ActivityDraft, 'day'> = { title: '', start: '', end: '', location: '', notes: '', budget: '' };
+const EMPTY: Omit<ActivityDraft, 'day'> = { title: '', start: '', end: '', location: '', place: null, notes: '', budget: '' };
 
 function ActivityForm({
   tripId,
@@ -213,61 +215,29 @@ function ActivityForm({
         ))}
       </ChipGroup>
 
-      <View style={styles.row}>
-        <View style={styles.grow}>
-          <TextField
-            label="Starts"
-            placeholder="7:00 PM"
-            value={draft.start}
-            onChangeText={(start) => update({ start })}
-            error={errors.start}
-            hint="Optional"
-            autoCapitalize="none"
-            maxLength={12}
-          />
-        </View>
-        <View style={styles.grow}>
-          <TextField
-            label="Ends"
-            placeholder="9:30 PM"
-            value={draft.end}
-            onChangeText={(end) => update({ end })}
-            error={errors.end}
-            hint="Optional"
-            autoCapitalize="none"
-            maxLength={12}
-          />
-        </View>
+      <View style={{ gap: Spacing.three }}>
+        <TimeField label="Starts" value={draft.start} onChange={(start) => update({ start })} error={errors.start} hint="Optional" />
+        <TimeField label="Ends" value={draft.end} onChange={(end) => update({ end })} error={errors.end} hint="Optional" />
       </View>
 
-      <View style={{ gap: Spacing.two }}>
-        <TextField
-          label="Where"
-          placeholder="Đà Lạt Night Market"
-          value={draft.location}
-          onChangeText={(location) => update({ location })}
-          maxLength={300}
-          hint="A place name or address. Opens in your maps app."
-        />
-        {draft.location.trim() ? (
-          <Button
-            variant="secondary"
-            label="Open in Maps"
-            onPress={() => void Linking.openURL(mapsUrl(draft.location, Platform.OS))}
-          />
-        ) : null}
-      </View>
+      <PlaceField
+        name={draft.location}
+        place={draft.place}
+        onChange={({ name, place }) => update({ location: name, place })}
+        near={draft.place ?? planCenter(activities)}
+      />
 
       <TextField
         label="Planned budget"
         placeholder="0.00"
         value={draft.budget}
         onChangeText={(budget) => update({ budget: budget.replace(/[^0-9.,]/g, '') })}
+        onBlur={() => update({ budget: normalizeMoneyText(draft.budget) ?? draft.budget })}
         keyboardType="decimal-pad"
         inputMode="decimal"
         maxLength={12}
         error={errors.budget}
-        hint="Roughly what the group expects to spend, in dollars. Optional."
+        hint="Roughly what the group expects to spend. Optional."
       />
 
       <TextField

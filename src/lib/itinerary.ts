@@ -11,10 +11,21 @@ export interface Activity {
   end_time: string | null;
   title: string;
   location: string | null;
+  /** Filled when the place was picked from place search. */
+  location_address?: string | null;
+  location_lat?: number | null;
+  location_lng?: number | null;
   notes: string | null;
   proposed_budget_cents: number;
   version: number;
   created_at: string;
+}
+
+/** A place picked from search: its exact spot, for the map link. */
+export interface PickedPlace {
+  address: string;
+  lat: number;
+  lng: number;
 }
 
 export interface PlanDay {
@@ -55,6 +66,40 @@ export function parseTime(text: string): string | null | undefined {
     return undefined;
   }
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+export type Half = 'AM' | 'PM';
+
+/**
+ * Splits a time into the clock part and AM/PM, for the time box and its
+ * AM | PM switch: "7:30 PM" → 7:30 + PM, "19:30" → 7:30 + PM, "0:15" → 12:15 + AM,
+ * "7pm" → 7 + PM, "7" → 7 with no AM/PM yet.
+ */
+export function timeParts(text: string): { clock: string; half: Half | null } {
+  const t = text.trim().toLowerCase().replace(/\./g, '');
+  if (t === 'noon') return { clock: '12:00', half: 'PM' };
+  if (t === 'midnight') return { clock: '12:00', half: 'AM' };
+  const m = /^(\d{1,2})(?::?(\d{0,2}))?\s*(am|pm|a|p)?$/.exec(t);
+  if (!m) return { clock: text.replace(/\s*(am|pm|a|p)$/i, '').trim(), half: null };
+  const hour = Number(m[1]);
+  const minutes = m[2] ?? '';
+  const clockOf = (h: number) => (minutes ? `${h}:${minutes}` : t.includes(':') ? `${h}:` : `${h}`);
+  if (m[3]) return { clock: clockOf(hour), half: m[3][0] === 'a' ? 'AM' : 'PM' };
+  // 24-hour times become 12-hour with the switch set.
+  if (hour === 0) return { clock: clockOf(12), half: 'AM' };
+  if (hour > 12 && hour <= 23) return { clock: clockOf(hour - 12), half: 'PM' };
+  return { clock: clockOf(hour), half: null };
+}
+
+/** A sensible AM/PM guess for a time typed without one: 7 to 11 is morning, 12 to 6 afternoon or evening. */
+export function guessHalf(clock: string): Half {
+  const hour = Number(/^(\d{1,2})/.exec(clock.trim())?.[1] ?? NaN);
+  return hour >= 7 && hour <= 11 ? 'AM' : 'PM';
+}
+
+/** The clock part and AM/PM back into one time: "7:30" + PM → "7:30 PM". Empty stays empty. */
+export function joinTime(clock: string, half: Half): string {
+  return clock.trim() ? `${clock.trim()} ${half}` : '';
 }
 
 /** "19:30:00" → "7:30 PM". */
@@ -229,6 +274,8 @@ export interface ActivityDraft {
   start: string;
   end: string;
   location: string;
+  /** Set when the place was picked from search; cleared when the name is edited by hand. */
+  place: PickedPlace | null;
   notes: string;
   budget: string;
 }
@@ -240,6 +287,10 @@ export function draftFromActivity(a: Activity): ActivityDraft {
     start: formatTime(a.start_time),
     end: formatTime(a.end_time),
     location: a.location ?? '',
+    place:
+      a.location_lat != null && a.location_lng != null
+        ? { address: a.location_address ?? '', lat: a.location_lat, lng: a.location_lng }
+        : null,
     notes: a.notes ?? '',
     budget: a.proposed_budget_cents ? centsToText(a.proposed_budget_cents) : '',
   };
@@ -251,6 +302,9 @@ export interface ActivityFields {
   start_time: string | null;
   end_time: string | null;
   location: string | null;
+  location_address: string | null;
+  location_lat: number | null;
+  location_lng: number | null;
   notes: string | null;
   proposed_budget_cents: Cents;
 }
@@ -285,6 +339,9 @@ export function checkActivity(draft: ActivityDraft): ActivityCheck {
       start_time: start ?? null,
       end_time: end ?? null,
       location: draft.location.trim() || null,
+      location_address: draft.location.trim() && draft.place ? draft.place.address || null : null,
+      location_lat: draft.location.trim() && draft.place ? draft.place.lat : null,
+      location_lng: draft.location.trim() && draft.place ? draft.place.lng : null,
       notes: draft.notes.trim() || null,
       proposed_budget_cents: budget,
     },
@@ -295,8 +352,23 @@ export function checkActivity(draft: ActivityDraft): ActivityCheck {
 // Places
 // ---------------------------------------------------------------------------
 
-/** A maps link for a place: Apple Maps on iPhone and iPad, Google Maps elsewhere. */
-export function mapsUrl(place: string, os: string): string {
+/**
+ * A maps link for a place: Apple Maps on iPhone and iPad, Google Maps elsewhere.
+ * A place picked from search opens at its exact spot.
+ */
+export function mapsUrl(place: string, os: string, spot?: { lat: number; lng: number } | null): string {
   const q = encodeURIComponent(place.trim());
+  if (spot) {
+    const ll = `${spot.lat},${spot.lng}`;
+    return os === 'ios'
+      ? `https://maps.apple.com/?ll=${ll}&q=${q}`
+      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ll)}`;
+  }
   return os === 'ios' ? `https://maps.apple.com/?q=${q}` : `https://www.google.com/maps/search/?api=1&query=${q}`;
+}
+
+/** Where to look first when searching: a place already in the plan, if any. */
+export function planCenter(activities: Activity[]): { lat: number; lng: number } | null {
+  const a = activities.find((x) => x.location_lat != null && x.location_lng != null);
+  return a ? { lat: a.location_lat!, lng: a.location_lng! } : null;
 }

@@ -498,6 +498,7 @@ function MemberRow({
         onPress={() => setOpen((v) => !v)}
         accessibilityRole={manageable ? 'button' : undefined}
         accessibilityState={manageable ? { expanded: open } : undefined}
+        aria-expanded={manageable ? open : undefined}
         accessibilityHint={manageable ? 'Shows options for this person' : undefined}
         style={styles.memberMain}>
         <Avatar name={member.display_name} />
@@ -601,6 +602,7 @@ function FormerMembers({ tripId, members, canManage }: { tripId: string; members
         label={`${open ? 'Hide' : 'Show'} people who left (${members.length})`}
         onPress={() => setOpen((v) => !v)}
         accessibilityState={{ expanded: open }}
+        aria-expanded={open}
       />
       {open
         ? members.map((m) => (
