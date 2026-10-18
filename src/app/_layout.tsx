@@ -10,6 +10,7 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 
+import { AppDialogHost } from '@/components/app-dialog';
 import { UpdateBanner } from '@/components/update-banner';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -95,6 +96,7 @@ function RootNavigator() {
         <Stack.Screen name="privacy" />
       </Stack>
       <UpdateBanner />
+      <AppDialogHost />
     </ThemeProvider>
   );
 }

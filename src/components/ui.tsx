@@ -325,6 +325,55 @@ export function Segmented<T extends string>({
   );
 }
 
+/** A row of tabs for switching between parts of a screen, with an optional "3 new" style badge. */
+export function Tabs<T extends string>({
+  label,
+  tabs,
+  value,
+  onChange,
+}: {
+  label: string;
+  tabs: { value: T; label: string; badge?: number }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  const theme = useTheme();
+  return (
+    <View accessibilityRole="tablist" aria-label={label} style={[chipStyles.tabs, { borderBottomColor: theme.border }]}>
+      {tabs.map((t) => {
+        const selected = t.value === value;
+        return (
+          <Pressable
+            key={t.value}
+            accessibilityRole="tab"
+            accessibilityState={{ selected }}
+            aria-selected={selected}
+            accessibilityLabel={t.badge ? `${t.label}, ${t.badge} new` : t.label}
+            onPress={() => onChange(t.value)}
+            style={({ pressed }) => [
+              chipStyles.tab,
+              { borderBottomColor: selected ? theme.primary : 'transparent', opacity: pressed ? 0.7 : 1 },
+            ]}>
+            <ThemedText
+              type="small"
+              numberOfLines={1}
+              style={{ fontFamily: selected ? Fonts.semibold : Fonts.medium, color: selected ? theme.text : theme.textSecondary }}>
+              {t.label}
+            </ThemedText>
+            {t.badge ? (
+              <View style={[chipStyles.badge, { backgroundColor: theme.accent }]}>
+                <ThemedText type="small" style={{ color: theme.onAccent, fontFamily: Fonts.semibold, fontSize: 11, lineHeight: 14 }}>
+                  {t.badge > 99 ? '99+' : String(t.badge)}
+                </ThemedText>
+              </View>
+            ) : null}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 export function Checkbox({ checked, label }: { checked: boolean; label: string }) {
   const theme = useTheme();
   return (
@@ -361,6 +410,22 @@ const chipStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  tabs: { flexDirection: 'row', borderBottomWidth: 1 },
+  tab: {
+    // Wider labels ("Updates 3") get more room than short ones ("Plan").
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 'auto',
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.one,
+    paddingHorizontal: Spacing.one,
+    borderBottomWidth: 3,
+    marginBottom: -1,
+  },
+  badge: { minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 5, alignItems: 'center', justifyContent: 'center' },
   checkbox: {
     width: 24,
     height: 24,

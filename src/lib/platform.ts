@@ -1,13 +1,20 @@
 import { Alert, Platform, Share } from 'react-native';
 
+import { askConfirm, hasDialogHost } from '@/lib/dialog';
+
 /** The public address of the website, used for invite links. */
 export function siteUrl(): string {
   if (Platform.OS === 'web' && typeof window !== 'undefined') return window.location.origin;
-  return process.env.EXPO_PUBLIC_SITE_URL ?? 'https://shareplate-app.vercel.app';
+  return process.env.EXPO_PUBLIC_SITE_URL ?? 'https://shareplate-trips.vercel.app';
 }
 
-/** Asks "are you sure?" and resolves to the answer. Works on web and phones. */
+/**
+ * Asks "are you sure?" and resolves to the answer, in Shareplate's own dialog
+ * (not the browser's pop-up). Falls back to the platform's dialog only if the
+ * app's dialog isn't on screen.
+ */
 export function confirmAction(title: string, message: string, confirmLabel: string): Promise<boolean> {
+  if (hasDialogHost()) return askConfirm(title, message, confirmLabel);
   if (Platform.OS === 'web') {
     return Promise.resolve(typeof window !== 'undefined' && window.confirm(`${title}\n\n${message}`));
   }

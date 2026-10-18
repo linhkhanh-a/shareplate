@@ -225,12 +225,27 @@ export interface DraftCheck {
   result: ItemizedBillResult | null;
 }
 
+/** Why the items step isn't done yet, in one sentence: "Item 3 is empty…". */
+export function itemsMessage(draft: ReceiptDraft, itemErrors: Record<string, string>): string {
+  if (draft.items.length === 0) return 'Add at least one item.';
+  const bad = draft.items.map((item, i) => ({ n: i + 1, error: itemErrors[item.key] })).filter((x) => x.error);
+  if (bad.length === 0) return '';
+  if (bad.length === 1) {
+    const { n, error } = bad[0];
+    return error.startsWith('This item is empty')
+      ? `Item ${n} is empty. Fill it in, or remove it with ×.`
+      : `Item ${n}: ${error.charAt(0).toLowerCase()}${error.slice(1)}`;
+  }
+  return `Items ${bad.map((x) => x.n).join(', ')} still need a name and a price. Fill them in, or remove empty ones with ×.`;
+}
+
 export function checkDraft(draft: ReceiptDraft): DraftCheck {
   const itemErrors: Record<string, string> = {};
   const prices: Cents[] = [];
   for (const item of draft.items) {
     const price = item.price.trim() ? readAmount(item.price) : null;
-    if (!item.name.trim()) itemErrors[item.key] = 'Add a name.';
+    if (!item.name.trim() && !item.price.trim()) itemErrors[item.key] = 'This item is empty. Fill it in, or remove it with ×.';
+    else if (!item.name.trim()) itemErrors[item.key] = 'Add a name.';
     else if (price === null) itemErrors[item.key] = 'Enter a price like 12.50.';
     prices.push(price ?? 0);
   }
@@ -247,7 +262,7 @@ export function checkDraft(draft: ReceiptDraft): DraftCheck {
     assignMessage: null,
     result: null,
   };
-  if (!itemsOk) return { ...empty, totalsMessage: draft.items.length ? 'Fix the items first.' : 'Add at least one item.' };
+  if (!itemsOk) return { ...empty, totalsMessage: itemsMessage(draft, itemErrors) };
 
   const subtotal = prices.reduce((a, b) => a + b, 0);
   const extras = extrasCents(draft, subtotal);

@@ -470,3 +470,18 @@ Picking a result saves the name, address and exact coordinates, so "Open in
 Maps" lands on the spot; typing a name without picking still works. Results
 favor places near others already in the plan. Selected chips and switches now
 also tell screen readers they're selected on the website (`aria-checked`).
+
+## 62. Step by step, tabs on the trip page, and Shareplate's own dialogs
+
+Entering a bill by item goes 1 Items → 2 Totals → 3 People in order: a step
+opens only once the ones before it are done (and you've been through them),
+finished steps show a check and can be revisited, and trying to go on with an
+empty or half-typed item says which one ("Item 2 is empty. Fill it in, or
+remove it with ×.") and outlines it in red. The trip page keeps the money card
+on top and puts the rest under tabs (Bills, Plan, People, Updates, Settings);
+the open tab is in the address (`?tab=people`), so Back returns to it, and
+Updates shows how many things are new. Every "are you sure?" question is now
+Shareplate's own dialog instead of the browser's "this site says" pop-up, with
+a red button for deleting, removing and leaving. The one browser pop-up left is
+"Leave site?" when closing or reloading the tab with unsaved changes: browsers
+don't let sites replace that one.

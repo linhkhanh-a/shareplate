@@ -6,7 +6,7 @@ import { ThemedText } from '@/components/themed-text';
 import { BudgetBar } from '@/components/budget-bar';
 import { LiveBadge } from '@/components/live-badge';
 import { TopBar } from '@/components/top-bar';
-import { Avatar, Button, Chip, ChipGroup, Divider, Loading, Notice, Pill, Screen, Section, TextField } from '@/components/ui';
+import { Avatar, Button, Chip, ChipGroup, Divider, Loading, Notice, Pill, Screen, Section, Tabs, TextField } from '@/components/ui';
 import { Fonts, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
@@ -47,8 +47,11 @@ import {
 } from '@/lib/queries';
 import { CURRENCIES, formatCents } from '@/money';
 
+type TripTab = 'bills' | 'plan' | 'people' | 'updates' | 'settings';
+const TAB_VALUES: TripTab[] = ['bills', 'plan', 'people', 'updates', 'settings'];
+
 export default function TripScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, tab: tabParam } = useLocalSearchParams<{ id: string; tab?: string }>();
   const uid = useAuth().session?.user.id;
   const trip = useTrip(id);
   const members = useMembers(id);
@@ -58,6 +61,9 @@ export default function TripScreen() {
 
   const me = members.data?.find((m) => m.user_id === uid && !m.left_at);
   const isAdmin = me?.role === 'admin';
+  const news = useTripNews(id, me);
+  // The open tab lives in the address, so Back from a bill returns to the same tab.
+  const tab: TripTab = TAB_VALUES.includes(tabParam as TripTab) ? (tabParam as TripTab) : 'bills';
 
   if (trip.isPending || members.isPending) {
     return (
@@ -99,73 +105,107 @@ export default function TripScreen() {
 
       <MoneySummary tripId={id} myMemberId={me?.id} memberIds={active.map((m) => m.id)} />
 
-      <WhatsNew tripId={id} me={me} names={names} />
+      <Tabs
+        label="Trip sections"
+        tabs={[
+          { value: 'bills', label: 'Bills' },
+          { value: 'plan', label: 'Plan' },
+          { value: 'people', label: 'People' },
+          { value: 'updates', label: 'Updates', badge: news.newCount },
+          { value: 'settings', label: 'Settings' },
+        ]}
+        value={tab}
+        onChange={(next) => router.setParams({ tab: next })}
+      />
 
-      <PlanTeaser tripId={id} />
+      {tab === 'updates' ? <WhatsNew news={news} me={me} names={names} /> : null}
 
-      <BudgetTeaser tripId={id} />
+      {tab === 'plan' ? (
+        <>
+          <PlanTeaser tripId={id} />
+          <BudgetTeaser tripId={id} />
+        </>
+      ) : null}
 
-      <Section title="Share">
-        <ThemedText type="small" themeColor="textSecondary">
-          {quick
-            ? 'Send each guest their total, or share the whole summary.'
-            : 'Send the summary to your group chat, or download a spreadsheet.'}
-        </ThemedText>
-        <Button
-          variant="secondary"
-          label="Share and export"
-          onPress={() => router.push({ pathname: '/trips/[id]/share', params: { id } })}
-        />
-      </Section>
+      {tab === 'bills' ? (
+        <>
+          <Section title="Bills">
+            {bills.isPending ? <Loading /> : null}
+            {bills.isError ? <Notice tone="error">{friendlyError(bills.error)}</Notice> : null}
+            {bills.data && bills.data.length === 0 ? (
+              <Notice>
+                <ThemedText type="strong">No bills yet</ThemedText>
+                <ThemedText type="small">Add the first one, like a dinner, a taxi or the hotel.</ThemedText>
+              </Notice>
+            ) : null}
+            <View style={styles.people}>
+              {bills.data?.map((b) => (
+                <BillRow
+                  key={b.id}
+                  tripId={id}
+                  bill={b}
+                  payerName={names.get(b.paid_by_member_id) ?? 'Someone'}
+                  myMemberId={me?.id}
+                  pinnedTo={b.itinerary_item_id ? plan.data?.find((a) => a.id === b.itinerary_item_id)?.title : undefined}
+                />
+              ))}
+            </View>
+            {payments.data && payments.data.length > 0 ? (
+              <ThemedText type="small" themeColor="textSecondary">
+                {payments.data.length} {payments.data.length === 1 ? 'payment' : 'payments'} recorded. See them in Settle up.
+              </ThemedText>
+            ) : null}
+          </Section>
 
-      <Section title="Bills">
-        {bills.isPending ? <Loading /> : null}
-        {bills.isError ? <Notice tone="error">{friendlyError(bills.error)}</Notice> : null}
-        {bills.data && bills.data.length === 0 ? (
-          <Notice>
-            <ThemedText type="strong">No bills yet</ThemedText>
-            <ThemedText type="small">Add the first one, like a dinner, a taxi or the hotel.</ThemedText>
-          </Notice>
-        ) : null}
-        <View style={styles.people}>
-          {bills.data?.map((b) => (
-            <BillRow
-              key={b.id}
-              tripId={id}
-              bill={b}
-              payerName={names.get(b.paid_by_member_id) ?? 'Someone'}
-              myMemberId={me?.id}
-              pinnedTo={b.itinerary_item_id ? plan.data?.find((a) => a.id === b.itinerary_item_id)?.title : undefined}
+          <Section title="Share">
+            <ThemedText type="small" themeColor="textSecondary">
+              {quick
+                ? 'Send each guest their total, or share the whole summary.'
+                : 'Send the summary to your group chat, or download a spreadsheet.'}
+            </ThemedText>
+            <Button
+              variant="secondary"
+              label="Share and export"
+              onPress={() => router.push({ pathname: '/trips/[id]/share', params: { id } })}
             />
-          ))}
-        </View>
-        {payments.data && payments.data.length > 0 ? (
-          <ThemedText type="small" themeColor="textSecondary">
-            {payments.data.length} {payments.data.length === 1 ? 'payment' : 'payments'} recorded. See them in Settle up.
-          </ThemedText>
-        ) : null}
-      </Section>
+          </Section>
+        </>
+      ) : null}
 
-      {!quick && isAdmin ? <InviteSection tripId={id} tripName={trip.data.name} /> : null}
+      {tab === 'people' ? (
+        <>
+          {!quick && isAdmin ? <InviteSection tripId={id} tripName={trip.data.name} /> : null}
 
-      <Section title="People">
-        <View style={styles.people}>
-          {active.map((m) => (
-            <MemberRow key={m.id} member={m} tripId={id} isMe={m.user_id === uid} canManage={isAdmin} />
-          ))}
-        </View>
-        {isAdmin ? <AddGuest tripId={id} quick={quick} /> : null}
-        <FormerMembers tripId={id} members={(members.data ?? []).filter((m) => m.left_at)} canManage={isAdmin} />
-        {!quick && !isAdmin ? (
-          <ThemedText type="small" themeColor="textSecondary">
-            Want to bring someone? Ask a trip admin for the invite link.
-          </ThemedText>
-        ) : null}
-      </Section>
+          <Section title="People">
+            <View style={styles.people}>
+              {active.map((m) => (
+                <MemberRow key={m.id} member={m} tripId={id} isMe={m.user_id === uid} canManage={isAdmin} />
+              ))}
+            </View>
+            {isAdmin ? <AddGuest tripId={id} quick={quick} /> : null}
+            <FormerMembers tripId={id} members={(members.data ?? []).filter((m) => m.left_at)} canManage={isAdmin} />
+            {!quick && !isAdmin ? (
+              <ThemedText type="small" themeColor="textSecondary">
+                Want to bring someone? Ask a trip admin for the invite link.
+              </ThemedText>
+            ) : null}
+          </Section>
+        </>
+      ) : null}
 
-      <Divider />
-      {isAdmin ? <TripSettings trip={trip.data} /> : null}
-      <LeaveTrip tripId={id} />
+      {tab === 'settings' ? (
+        <>
+          {isAdmin ? (
+            <TripSettings trip={trip.data} />
+          ) : (
+            <ThemedText type="small" themeColor="textSecondary">
+              Trip admins can rename the trip, change its currency or delete it.
+            </ThemedText>
+          )}
+          <Divider />
+          <LeaveTrip tripId={id} />
+        </>
+      ) : null}
     </Screen>
   );
 }
@@ -220,13 +260,15 @@ function MoneySummary({
   );
 }
 
-/** Recent changes by others, with the ones since your last visit marked. */
-function WhatsNew({ tripId, me, names }: { tripId: string; me?: Member; names: Map<string, string> }) {
-  const theme = useTheme();
+/**
+ * Recent changes by others, and which are new since your last visit. Opening
+ * the trip counts as looking, so the "3 new" badge on your trip list clears;
+ * the Updates tab keeps showing what was new on this visit.
+ */
+function useTripNews(tripId: string, me?: Member) {
   const events = useTripEvents(tripId);
   const lastSeen = useLastSeen(tripId);
   const markSeen = useMarkSeen(tripId);
-  const [showAll, setShowAll] = useState(false);
   const marked = useRef(false);
 
   // Once we know when you last looked, remember it for this visit and mark the trip as seen.
@@ -241,10 +283,25 @@ function WhatsNew({ tripId, me, names }: { tripId: string; me?: Member; names: M
 
   // Your own changes aren't news to you, and your own "joined" isn't either.
   const list = (events.data ?? []).filter((e) => e.actor_member_id !== me?.id && e.details.member !== me?.id);
-  if (list.length === 0) return null;
   const isNew = (e: TripEvent) => !!since && e.created_at > since;
-  const newCount = list.filter(isNew).length;
-  const shown = showAll ? list.slice(0, 20) : list.slice(0, Math.max(3, Math.min(newCount, 6)));
+  return { list, isNew, newCount: list.filter(isNew).length };
+}
+
+type TripNews = ReturnType<typeof useTripNews>;
+
+/** Recent changes by others, with the ones since your last visit marked. */
+function WhatsNew({ news, me, names }: { news: TripNews; me?: Member; names: Map<string, string> }) {
+  const theme = useTheme();
+  const [showAll, setShowAll] = useState(false);
+  const { list, isNew, newCount } = news;
+  if (list.length === 0) {
+    return (
+      <ThemedText themeColor="textSecondary">
+        Nothing yet. When others add bills, payments or plans, you&apos;ll see it here.
+      </ThemedText>
+    );
+  }
+  const shown = showAll ? list.slice(0, 20) : list.slice(0, Math.max(5, Math.min(newCount, 10)));
   const nameOf = (memberId: string) => names.get(memberId) ?? 'Someone';
 
   return (
