@@ -82,6 +82,21 @@ describe('normalizeReceipt', () => {
     expect(flagged.warnings).toEqual(["The prices already include the tax (3.85), so it isn't added again."]);
     // …or the numbers give it away even when it doesn't.
     expect(normalizeReceipt(berghotel).tax_cents).toBe(0);
+    // Philippine receipts too: VAT inside the subtotal, a 10% service charge on top.
+    const bagOfBeans = normalizeReceipt({
+      is_receipt: true,
+      items: [
+        { name: 'Coffee Choco Banana', line_total: 170 },
+        { name: 'HotGreen Tea', line_total: 100 },
+        { name: 'D White mocha', line_total: 165 },
+        { name: 'Blueberry Cheesecake [Slice]', line_total: 175 },
+      ],
+      subtotal: 610,
+      tax: 65.36,
+      tip: 54.46,
+      total: 664.46,
+    });
+    expect(bagOfBeans).toMatchObject({ tax_cents: 0, tip_cents: 5446, total_cents: 66446 });
     // Tax added on top stays as it is.
     const onTop = normalizeReceipt({ ...berghotel, tax_included: false, total: 58.35 });
     expect(onTop).toMatchObject({ tax_cents: 385, warnings: [] });
