@@ -51,10 +51,14 @@ link once hosting is set up, and a "try this" checklist.
 - [x] Type the items instead when there's no photo or the reader can't help
 - [x] Edit scanned bills item by item; receipt photo kept with the bill
 
-## Phase 6: Itinerary
-- [ ] Days, activities, times, places, planned budgets
-- [ ] Drag to reorder
-- [ ] Pin bills to activities; tap to see the bill
+## Phase 6: Itinerary ✅
+- [x] Trip dates (admins), with each day labelled by its date
+- [x] Activities per day: name, start and end times, place, notes, planned budget
+- [x] Drag to reorder within a day; move to another day in the editor; "Sort by time"
+- [x] Open a place in Apple Maps (iPhone, iPad) or Google Maps (web)
+- [x] Pin bills to activities from the activity, or from the bill editor ("Part of the plan")
+- [x] Planned vs. spent for each activity, each day and the whole trip; tap a pinned bill to open it
+- [x] Live updates and "Minh is editing" for the plan, like bills
 
 ## Phase 7: Budget dashboard
 - [ ] Trip and per-person daily allowances

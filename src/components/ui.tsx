@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { createContext, useContext, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -16,14 +16,24 @@ import { ThemedText } from '@/components/themed-text';
 import { Fonts, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
+const ScrollLockContext = createContext<(locked: boolean) => void>(() => {});
+
+/** Lets something on the page (like a drag handle) pause scrolling while it's in use. */
+export function useScrollLock() {
+  return useContext(ScrollLockContext);
+}
+
 /** A scrolling page with a centered, readable column. */
 export function Screen({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
   const theme = useTheme();
+  const [locked, setLocked] = useState(false);
   return (
     <SafeAreaView style={[styles.flex, { backgroundColor: theme.background }]} edges={['top', 'bottom']}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <View style={styles.column}>{children}</View>
-      </ScrollView>
+      <ScrollLockContext.Provider value={setLocked}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" scrollEnabled={!locked}>
+          <View style={styles.column}>{children}</View>
+        </ScrollView>
+      </ScrollLockContext.Provider>
       {footer ? <View style={[styles.column, styles.footer]}>{footer}</View> : null}
     </SafeAreaView>
   );

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/lib/auth';
+import { applyPlacements, type Activity, type ActivityFields, type Placement } from '@/lib/itinerary';
 import { inviteUrl } from '@/lib/queries-helpers';
 import type { ScanResult } from '@/lib/receipt';
 import { supabase } from '@/lib/supabase';
@@ -28,6 +29,12 @@ export interface Trip {
   name: string;
   mode: TripMode;
   created_at: string;
+}
+
+/** A trip with its dates, for the trip and plan screens. */
+export interface TripDetails extends Trip {
+  start_date: string | null;
+  end_date: string | null;
 }
 
 export interface TripSummary {
@@ -63,6 +70,7 @@ export const keys = {
   invite: (id: string) => ['invite', id] as const,
   bills: (id: string) => ['bills', id] as const,
   payments: (id: string) => ['payments', id] as const,
+  itinerary: (id: string) => ['itinerary', id] as const,
   invitePreview: (token: string) => ['invite-preview', token] as const,
 };
 
@@ -141,10 +149,14 @@ export function useCreateTrip() {
 export function useTrip(id: string) {
   return useQuery({
     queryKey: keys.trip(id),
-    queryFn: async (): Promise<Trip> => {
-      const { data, error } = await supabase.from('groups').select('id, name, mode, created_at').eq('id', id).single();
+    queryFn: async (): Promise<TripDetails> => {
+      const { data, error } = await supabase
+        .from('groups')
+        .select('id, name, mode, created_at, start_date, end_date')
+        .eq('id', id)
+        .single();
       if (error) throw error;
-      return data as Trip;
+      return data as TripDetails;
     },
   });
 }
@@ -157,6 +169,18 @@ export function useRenameTrip(id: string) {
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries(),
+  });
+}
+
+/** Admins set the trip's first and last day; the plan shows a date on each day. */
+export function useSetTripDates(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (dates: { start_date: string | null; end_date: string | null }) => {
+      const { error } = await supabase.from('groups').update(dates).eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.trip(id) }),
   });
 }
 
@@ -327,6 +351,8 @@ export interface Bill {
   bill_date: string;
   bill_image_path: string | null;
   paid_by_member_id: string;
+  /** The plan activity this bill is pinned to, if any. */
+  itinerary_item_id: string | null;
   version: number;
   created_at: string;
   shares: BillShare[];
@@ -365,7 +391,7 @@ export function useBills(tripId: string) {
       const { data, error } = await supabase
         .from('bills')
         .select(
-          'id, title, vendor, category, split_mode, subtotal_cents, discount_cents, tax_cents, tip_cents, total_cents, bill_date, bill_image_path, paid_by_member_id, version, created_at, shares:bill_participants(group_member_id, share_input, amount_cents, items_cents, discount_cents, tax_cents, tip_cents)',
+          'id, title, vendor, category, split_mode, subtotal_cents, discount_cents, tax_cents, tip_cents, total_cents, bill_date, bill_image_path, paid_by_member_id, itinerary_item_id, version, created_at, shares:bill_participants(group_member_id, share_input, amount_cents, items_cents, discount_cents, tax_cents, tip_cents)',
         )
         .eq('group_id', tripId)
         .order('bill_date', { ascending: false })
@@ -599,6 +625,141 @@ export function useReceiptUrl(path: string | null | undefined) {
       if (error) throw error;
       return data.signedUrl;
     },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Trip plan (itinerary)
+// ---------------------------------------------------------------------------
+
+export function useItinerary(tripId: string) {
+  return useQuery({
+    queryKey: keys.itinerary(tripId),
+    queryFn: async (): Promise<Activity[]> => {
+      const { data, error } = await supabase
+        .from('itinerary_items')
+        .select(
+          'id, day_number, position, start_time, end_time, title, location, notes, proposed_budget_cents, version, created_at',
+        )
+        .eq('group_id', tripId)
+        .order('day_number')
+        .order('position')
+        .order('created_at');
+      if (error) throw error;
+      return (data as Activity[]).map((a) => ({ ...a, proposed_budget_cents: n(a.proposed_budget_cents) }));
+    },
+  });
+}
+
+export class StaleActivityError extends Error {
+  constructor() {
+    super('STALE_ACTIVITY: someone else changed this activity while you were editing it');
+  }
+}
+
+/** Adds a new activity, or saves changes if someone else hasn't changed it first. */
+export function useSaveActivity(tripId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      id?: string;
+      expectedVersion?: number;
+      fields: ActivityFields;
+      /** Where it goes in its day: set for new activities and moves to another day. */
+      position?: number;
+    }): Promise<string> => {
+      const row = { ...input.fields, ...(input.position === undefined ? {} : { position: input.position }) };
+      if (!input.id) {
+        const { data, error } = await supabase
+          .from('itinerary_items')
+          .insert({ ...row, group_id: tripId })
+          .select('id')
+          .single();
+        if (error) throw error;
+        return (data as { id: string }).id;
+      }
+      let query = supabase.from('itinerary_items').update(row).eq('id', input.id);
+      if (input.expectedVersion !== undefined) query = query.eq('version', input.expectedVersion);
+      const { data, error } = await query.select('id');
+      if (error) throw error;
+      if ((data ?? []).length === 0) {
+        const { data: still } = await supabase.from('itinerary_items').select('id').eq('id', input.id);
+        throw (still ?? []).length > 0
+          ? new StaleActivityError()
+          : new Error('ACTIVITY_NOT_FOUND: this activity was deleted');
+      }
+      return input.id;
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.itinerary(tripId) }),
+  });
+}
+
+export function useDeleteActivity(tripId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('itinerary_items').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: keys.itinerary(tripId) });
+      const previous = qc.getQueryData<Activity[]>(keys.itinerary(tripId));
+      qc.setQueryData<Activity[]>(keys.itinerary(tripId), (list) => list?.filter((a) => a.id !== id));
+      return { previous };
+    },
+    onError: (_e, _id, context) => {
+      if (context?.previous) qc.setQueryData(keys.itinerary(tripId), context.previous);
+    },
+    onSettled: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: keys.itinerary(tripId) }),
+        // Bills pinned to it are unpinned by the database.
+        qc.invalidateQueries({ queryKey: keys.bills(tripId) }),
+      ]),
+  });
+}
+
+/** Saves a new order (and days) for activities, showing it right away. */
+export function useArrangeItinerary(tripId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (layout: Placement[]) => {
+      const { error } = await supabase.rpc('arrange_itinerary', { p_group: tripId, p_layout: layout });
+      if (error) throw error;
+    },
+    onMutate: async (layout) => {
+      await qc.cancelQueries({ queryKey: keys.itinerary(tripId) });
+      const previous = qc.getQueryData<Activity[]>(keys.itinerary(tripId));
+      qc.setQueryData<Activity[]>(keys.itinerary(tripId), (list) => (list ? applyPlacements(list, layout) : list));
+      return { previous };
+    },
+    onError: (_e, _layout, context) => {
+      if (context?.previous) qc.setQueryData(keys.itinerary(tripId), context.previous);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.itinerary(tripId) }),
+  });
+}
+
+/** Pins a bill to an activity, or unpins it (activityId null). */
+export function usePinBill(tripId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ billId, activityId }: { billId: string; activityId: string | null }) => {
+      const { error } = await supabase.from('bills').update({ itinerary_item_id: activityId }).eq('id', billId);
+      if (error) throw error;
+    },
+    onMutate: async ({ billId, activityId }) => {
+      await qc.cancelQueries({ queryKey: keys.bills(tripId) });
+      const previous = qc.getQueryData<Bill[]>(keys.bills(tripId));
+      qc.setQueryData<Bill[]>(keys.bills(tripId), (bills) =>
+        bills?.map((b) => (b.id === billId ? { ...b, itinerary_item_id: activityId } : b)),
+      );
+      return { previous };
+    },
+    onError: (_e, _vars, context) => {
+      if (context?.previous) qc.setQueryData(keys.bills(tripId), context.previous);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.bills(tripId) }),
   });
 }
 

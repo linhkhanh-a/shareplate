@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { PlanPicker } from '@/components/plan-picker';
 import { TopBar } from '@/components/top-bar';
 import {
   Avatar,
@@ -34,7 +35,7 @@ import {
 import { useTripLive } from '@/lib/live';
 import { confirmAction } from '@/lib/platform';
 import { describeEditors } from '@/lib/presence';
-import { useBills, useDeleteBill, useMembers, useSaveBill, type Bill, type Member } from '@/lib/queries';
+import { useBills, useDeleteBill, useMembers, usePinBill, useSaveBill, type Bill, type Member } from '@/lib/queries';
 import { formatCents } from '@/money';
 
 /** Back to the trip, even when the bill was opened directly from a link. */
@@ -50,7 +51,7 @@ const MODES: { value: ManualMode; label: string }[] = [
 ];
 
 export default function BillScreen() {
-  const { id: tripId, billId } = useLocalSearchParams<{ id: string; billId?: string }>();
+  const { id: tripId, billId, pin } = useLocalSearchParams<{ id: string; billId?: string; pin?: string }>();
   const members = useMembers(tripId);
   const bills = useBills(tripId);
   const uid = useAuth().session?.user.id;
@@ -96,6 +97,7 @@ export default function BillScreen() {
       members={members.data ?? []}
       existing={existing}
       myMemberId={members.data?.find((m) => m.user_id === uid)?.id}
+      pinTo={pin}
     />
   );
 }
@@ -106,12 +108,15 @@ function BillForm({
   existing,
   myMemberId,
   onReload,
+  pinTo,
 }: {
   tripId: string;
   members: Member[];
   existing?: Bill;
   myMemberId?: string;
   onReload: () => void;
+  /** Pins a new bill to this plan activity (when added from the activity). */
+  pinTo?: string;
 }) {
   const theme = useTheme();
   const { setEditing, editorsOf } = useTripLive();
@@ -128,6 +133,8 @@ function BillForm({
   const otherEditors = existingId ? editorsOf(existingId) : [];
   const save = useSaveBill(tripId);
   const del = useDeleteBill(tripId);
+  const pin = usePinBill(tripId);
+  const [activityId, setActivityId] = useState<string | null>(existing ? existing.itinerary_item_id : (pinTo ?? null));
   const editable = !existing || existing.split_mode !== 'itemized';
 
   // People who can be on the bill: everyone still in the trip, plus anyone already on it.
@@ -179,8 +186,9 @@ function BillForm({
   async function onSave() {
     setAttempted(true);
     if (!split.ok || !dateOk || !payer) return;
+    let savedId: string;
     try {
-      await save.mutateAsync({
+      savedId = await save.mutateAsync({
         id: existing?.id,
         expected_version: openedVersion,
         group_id: tripId,
@@ -196,9 +204,15 @@ function BillForm({
           amount_cents: s.amountCents,
         })),
       });
-      returnToTrip(tripId);
     } catch {
       // Shown below from save.error.
+      return;
+    }
+    try {
+      if (activityId !== (existing?.itinerary_item_id ?? null)) await pin.mutateAsync({ billId: savedId, activityId });
+      returnToTrip(tripId);
+    } catch {
+      // Shown below from pin.error; the bill itself is saved.
     }
   }
 
@@ -221,6 +235,9 @@ function BillForm({
   const footer = editable ? (
     <View style={{ gap: Spacing.two }}>
       {save.isError ? <Notice tone="error">{friendlyError(save.error)}</Notice> : null}
+      {pin.isError ? (
+        <Notice tone="error">{`The bill is saved, but pinning it to the plan didn't work. ${friendlyError(pin.error)}`}</Notice>
+      ) : null}
       {attempted && !split.ok ? <Notice tone="error">{split.message}</Notice> : null}
       <Button label={existing ? 'Save changes' : 'Add bill'} onPress={onSave} loading={save.isPending} />
     </View>
@@ -313,6 +330,8 @@ function BillForm({
           <Chip key={c} label={c} selected={category === c} onPress={() => editable && setCategory(c)} />
         ))}
       </ChipGroup>
+
+      <PlanPicker tripId={tripId} billDate={date} value={activityId} onChange={(v) => editable && setActivityId(v)} />
 
       <Section title="Split">
         {editable ? <Segmented label="How to split" options={MODES} value={mode} onChange={changeMode} /> : null}

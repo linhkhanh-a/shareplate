@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { PlanPicker } from '@/components/plan-picker';
 import { TopBar } from '@/components/top-bar';
 import { Avatar, Button, Chip, ChipGroup, Loading, Notice, Screen, Section, TextField } from '@/components/ui';
 import { Fonts, Radius, Spacing } from '@/constants/theme';
@@ -22,6 +23,7 @@ import {
   useBills,
   useMembers,
   useReceiptUrl,
+  usePinBill,
   useSaveItemizedBill,
   type Bill,
   type Member,
@@ -53,7 +55,7 @@ function returnToTrip(tripId: string) {
 }
 
 export default function ScanScreen() {
-  const { id: tripId, billId } = useLocalSearchParams<{ id: string; billId?: string }>();
+  const { id: tripId, billId, pin } = useLocalSearchParams<{ id: string; billId?: string; pin?: string }>();
   const uid = useAuth().session?.user.id;
   const members = useMembers(tripId);
   const bills = useBills(tripId);
@@ -90,6 +92,7 @@ export default function ScanScreen() {
       existing={existing}
       initial={initial}
       onReload={() => setReloads((n) => n + 1)}
+      pinTo={pin}
     />
   );
 }
@@ -101,6 +104,7 @@ function ScanWizard({
   existing,
   initial,
   onReload,
+  pinTo,
 }: {
   tripId: string;
   members: Member[];
@@ -108,8 +112,12 @@ function ScanWizard({
   existing?: Bill;
   initial: ReceiptDraft;
   onReload: () => void;
+  /** Pins a new bill to this plan activity (when scanned from the activity). */
+  pinTo?: string;
 }) {
   const save = useSaveItemizedBill(tripId);
+  const pin = usePinBill(tripId);
+  const [activityId, setActivityId] = useState<string | null>(existing ? existing.itinerary_item_id : (pinTo ?? null));
   const { setEditing, editorsOf } = useTripLive();
   const [step, setStep] = useState<Step>(existing ? 'items' : 'photo');
   const [draft, setDraft] = useState<ReceiptDraft>(initial);
@@ -172,13 +180,20 @@ function ScanWizard({
 
   async function onSave() {
     if (!check.result) return;
+    let savedId: string;
     try {
-      await save.mutateAsync(
+      savedId = await save.mutateAsync(
         itemizedPayload(draft, check.result, { tripId, billId: existing?.id, expectedVersion: openedVersion }),
       );
-      returnToTrip(tripId);
     } catch {
       // Shown in the footer.
+      return;
+    }
+    try {
+      if (activityId !== (existing?.itinerary_item_id ?? null)) await pin.mutateAsync({ billId: savedId, activityId });
+      returnToTrip(tripId);
+    } catch {
+      // Shown in the footer; the bill itself is saved.
     }
   }
 
@@ -187,6 +202,9 @@ function ScanWizard({
     step === 'photo' ? undefined : (
       <View style={styles.footer}>
         {step === 'people' && save.isError ? <Notice tone="error">{friendlyError(save.error)}</Notice> : null}
+        {step === 'people' && pin.isError ? (
+          <Notice tone="error">{`The bill is saved, but pinning it to the plan didn't work. ${friendlyError(pin.error)}`}</Notice>
+        ) : null}
         <View style={styles.footerButtons}>
           {stepIndex > 0 ? (
             <Button label="Back" variant="secondary" onPress={() => setStep(STEPS[stepIndex - 1].step)} />
@@ -280,7 +298,10 @@ function ScanWizard({
       ) : null}
 
       {step === 'totals' ? (
-        <TotalsStep draft={draft} check={check} update={update} people={people} nameOf={nameOf} scanned={!!draft.imagePath} />
+        <>
+          <TotalsStep draft={draft} check={check} update={update} people={people} nameOf={nameOf} scanned={!!draft.imagePath} />
+          <PlanPicker tripId={tripId} billDate={draft.date} value={activityId} onChange={setActivityId} />
+        </>
       ) : null}
 
       {step === 'people' ? (
