@@ -34,6 +34,6 @@ describe('friendlyError', () => {
 
 describe('inviteUrl', () => {
   it('builds a join link that works on any deployment', () => {
-    expect(inviteUrl('https://shareplate-app.vercel.app', 'abc123')).toBe('https://shareplate-app.vercel.app/join?code=abc123');
+    expect(inviteUrl('https://shareplate-trips.vercel.app', 'abc123')).toBe('https://shareplate-trips.vercel.app/join?code=abc123');
   });
 });

@@ -3,7 +3,7 @@ import { Alert, Platform, Share } from 'react-native';
 /** The public address of the website, used for invite links. */
 export function siteUrl(): string {
   if (Platform.OS === 'web' && typeof window !== 'undefined') return window.location.origin;
-  return process.env.EXPO_PUBLIC_SITE_URL ?? 'https://shareplate-app.vercel.app';
+  return process.env.EXPO_PUBLIC_SITE_URL ?? 'https://shareplate-trips.vercel.app';
 }
 
 /** Asks "are you sure?" and resolves to the answer. Works on web and phones. */
