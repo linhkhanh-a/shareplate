@@ -23,6 +23,17 @@ export function friendlyError(error: unknown): string {
       : `${name} still owes ${amount}. Settle up first, then try again.`;
   }
 
+  const former = /FORMER_MEMBER: (.+) has left the trip, and this would leave them with a balance of (-?\d+) cents/.exec(message);
+  if (former) {
+    const [, name, raw] = former;
+    const cents = Number(raw);
+    const amount = formatCents(Math.abs(cents));
+    return `${name} has left the trip, and this would leave them ${cents > 0 ? 'being owed' : 'owing'} ${amount}. Bring ${name} back to the trip first (under People), then try again.`;
+  }
+  if (message.includes('PAYMENT_NOT_REMOVED')) {
+    return 'This payment was already removed, or only the payer, the receiver, whoever recorded it, or an admin can remove it.';
+  }
+
   const history = /HAS_HISTORY: (.+?) is on bills/.exec(message);
   if (history) {
     return `${history[1]} is on bills or payments, so they can leave the trip but can't be deleted.`;

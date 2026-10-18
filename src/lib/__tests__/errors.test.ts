@@ -13,6 +13,16 @@ describe('friendlyError', () => {
     );
   });
 
+  it('explains why a change to someone who left is refused', () => {
+    expect(
+      friendlyError({ message: 'FORMER_MEMBER: Minh has left the trip, and this would leave them with a balance of -118756 cents' }),
+    ).toBe('Minh has left the trip, and this would leave them owing $1,187.56. Bring Minh back to the trip first (under People), then try again.');
+    expect(
+      friendlyError({ message: 'FORMER_MEMBER: Minh has left the trip, and this would leave them with a balance of 500 cents' }),
+    ).toMatch(/leave them being owed \$5\.00/);
+    expect(friendlyError(new Error('PAYMENT_NOT_REMOVED'))).toMatch(/already removed, or only the payer/);
+  });
+
   it('turns database codes into plain sentences', () => {
     expect(friendlyError(new Error('LAST_ADMIN: the group needs another admin first'))).toMatch(/needs an admin/);
     expect(friendlyError({ message: 'INVITE_INVALID: this invite link has expired or was reset' })).toMatch(

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { FormerOnBillNotice } from '@/components/former-on-bill';
 import { PlanPicker } from '@/components/plan-picker';
 import { TopBar } from '@/components/top-bar';
 import { Avatar, Button, Chip, ChipGroup, Loading, Notice, Screen, Section, TextField } from '@/components/ui';
@@ -14,6 +15,7 @@ import { friendlyError } from '@/lib/errors';
 import { CATEGORIES, friendlyDate, isValidIsoDate, todayIso } from '@/lib/ledger';
 import { useTripLive } from '@/lib/live';
 import { pickReceiptPhoto } from '@/lib/photo';
+import { formerOnBill } from '@/lib/people';
 import { describeEditors } from '@/lib/presence';
 import {
   activeMembers,
@@ -244,6 +246,12 @@ function ScanWizard({
           </ThemedText>
         ) : null}
       </View>
+
+      <FormerOnBillNotice
+        tripId={tripId}
+        people={existing ? formerOnBill(members, existing) : []}
+        canManage={members.some((m) => m.id === myMemberId && m.role === 'admin')}
+      />
 
       {newerVersionSaved ? (
         <Notice tone="error">

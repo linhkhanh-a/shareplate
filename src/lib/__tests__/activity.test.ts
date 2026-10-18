@@ -27,11 +27,13 @@ describe("what's new", () => {
       'An paid you $18.00 (recorded by Minh)',
     );
     expect(describeEvent(ev('payment_deleted', { subject: null, actor_member_id: 'linh', details: { from: 'an', to: 'linh' } }), nameOf, 'linh')).toBe(
-      'You undid a payment: An paid you $18.00',
+      'You removed a payment: An paid you $18.00',
     );
     expect(describeEvent(ev('guest_added', { subject: 'Hương', amount_cents: null }), nameOf)).toBe('An added Hương as a guest');
     expect(describeEvent(ev('member_joined', { subject: 'Tuấn' }), nameOf)).toBe('Tuấn joined the trip');
     expect(describeEvent(ev('member_left', { subject: 'Minh' }), nameOf)).toBe('Minh left the trip');
+    expect(describeEvent(ev('member_removed', { subject: 'Minh' }), nameOf)).toBe('An removed Minh from the trip');
+    expect(describeEvent(ev('member_returned', { subject: 'Minh' }), nameOf)).toBe('An brought Minh back to the trip');
     expect(describeEvent(ev('activity_added', { subject: 'Lake walk', details: { day: 2 } }), nameOf)).toBe(
       'An added Lake walk to day 2 of the plan',
     );

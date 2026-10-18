@@ -9,14 +9,18 @@ import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { friendlyError } from '@/lib/errors';
+import { describeEvent, timeAgo } from '@/lib/activity';
 import { friendlyDate, tripMoney } from '@/lib/ledger';
+import { canRemovePayment, formerWithBalance } from '@/lib/people';
 import { confirmAction, copyText } from '@/lib/platform';
 import {
   useBills,
+  useBringBack,
   useDeletePayment,
   useMembers,
   usePayments,
   useRecordPayment,
+  useRemovedPayments,
   type Member,
   type Payment,
 } from '@/lib/queries';
@@ -28,6 +32,10 @@ export default function SettleScreen() {
   const members = useMembers(tripId);
   const bills = useBills(tripId);
   const payments = usePayments(tripId);
+  const removed = useRemovedPayments(tripId);
+  // Kept here rather than in each row: the row disappears while removing, and
+  // if the database refuses, the reason still needs somewhere to show.
+  const removePayment = useDeletePayment(tripId);
 
   const loading = members.isPending || bills.isPending || payments.isPending;
   const error = members.error ?? bills.error ?? payments.error;
@@ -43,9 +51,13 @@ export default function SettleScreen() {
 
   const all = members.data ?? [];
   const byId = new Map(all.map((m) => [m.id, m]));
-  const me = all.find((m) => m.user_id === uid);
+  const me = all.find((m) => m.user_id === uid && !m.left_at);
+  const isAdmin = me?.role === 'admin';
   const money = tripMoney(bills.data ?? [], payments.data ?? [], all.filter((m) => !m.left_at).map((m) => m.id));
   const name = (id: string) => (id === me?.id ? 'You' : (byId.get(id)?.display_name ?? 'Someone'));
+  const left = (id: string) => !!byId.get(id)?.left_at;
+  // Only trips from before former members were locked at $0 can have these.
+  const stranded = formerWithBalance(all, money.balances);
 
   // Your own payments first, then the rest.
   const transfers = [...money.transfers].sort(
@@ -64,6 +76,10 @@ export default function SettleScreen() {
         </ThemedText>
       </View>
 
+      {stranded.length > 0 ? (
+        <StrandedNotice tripId={tripId} people={stranded} canManage={isAdmin} />
+      ) : null}
+
       {transfers.length === 0 ? (
         <Notice tone="success">
           <ThemedText type="strong">Everyone&apos;s settled up</ThemedText>
@@ -78,6 +94,7 @@ export default function SettleScreen() {
               transfer={t}
               fromName={name(t.fromId)}
               toName={name(t.toId)}
+              leftNote={[t.fromId, t.toId].filter(left).map(name)}
               recipient={byId.get(t.toId)}
               mine={t.fromId === me?.id || t.toId === me?.id}
             />
@@ -96,6 +113,7 @@ export default function SettleScreen() {
                 <Avatar name={byId.get(memberId)?.display_name ?? '?'} size={32} />
                 <ThemedText style={styles.grow} numberOfLines={1}>
                   {name(memberId)}
+                  {left(memberId) ? <ThemedText type="small" themeColor="textSecondary"> (left the trip)</ThemedText> : null}
                 </ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">
                   {cents > 0 ? (memberId === me?.id ? 'are owed' : 'is owed') : cents < 0 ? (memberId === me?.id ? 'owe' : 'owes') : 'settled'}
@@ -112,13 +130,42 @@ export default function SettleScreen() {
         <>
           <Divider />
           <Section title="Payments recorded">
+            {removePayment.isError ? <Notice tone="error">{friendlyError(removePayment.error)}</Notice> : null}
             <View style={styles.list}>
               {payments.data.map((p) => (
-                <PaymentRow key={p.id} tripId={tripId} payment={p} fromName={name(p.from_member_id)} toName={name(p.to_member_id)} />
+                <PaymentRow
+                  key={p.id}
+                  payment={p}
+                  fromName={name(p.from_member_id)}
+                  toName={name(p.to_member_id)}
+                  canRemove={canRemovePayment(p, me, uid)}
+                  onRemove={() => removePayment.mutate(p.id)}
+                  removing={removePayment.isPending && removePayment.variables === p.id}
+                />
               ))}
             </View>
+            <ThemedText type="small" themeColor="textSecondary">
+              Only the payer, the receiver, whoever recorded a payment, or an admin can remove it.
+            </ThemedText>
           </Section>
         </>
+      ) : null}
+
+      {removed.data && removed.data.length > 0 ? (
+        <Section title="Removed payments">
+          <View style={styles.list}>
+            {removed.data.map((e) => (
+              <View key={e.id} style={styles.removedRow}>
+                <ThemedText type="small" themeColor="textSecondary" style={styles.grow}>
+                  {describeEvent(e, (memberId) => byId.get(memberId)?.display_name ?? 'Someone', me?.id)}
+                </ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {timeAgo(e.created_at)}
+                </ThemedText>
+              </View>
+            ))}
+          </View>
+        </Section>
       ) : null}
     </Screen>
   );
@@ -129,6 +176,7 @@ function TransferCard({
   transfer,
   fromName,
   toName,
+  leftNote,
   recipient,
   mine,
 }: {
@@ -136,6 +184,8 @@ function TransferCard({
   transfer: Transfer;
   fromName: string;
   toName: string;
+  /** Names of people in this payment who have left the trip. */
+  leftNote: string[];
   recipient?: Member;
   mine: boolean;
 }) {
@@ -204,6 +254,11 @@ function TransferCard({
         </ThemedText>
       )}
 
+      {leftNote.length > 0 ? (
+        <ThemedText type="small" themeColor="textSecondary">
+          {leftNote.join(' and ')} left the trip. Bring them back above before recording this.
+        </ThemedText>
+      ) : null}
       <Button label="Mark as paid" variant="secondary" onPress={onPaid} loading={record.isPending} />
       {record.isError ? <Notice tone="error">{friendlyError(record.error)}</Notice> : null}
     </View>
@@ -211,25 +266,30 @@ function TransferCard({
 }
 
 function PaymentRow({
-  tripId,
   payment,
   fromName,
   toName,
+  canRemove,
+  onRemove: remove,
+  removing,
 }: {
-  tripId: string;
   payment: Payment;
   fromName: string;
   toName: string;
+  canRemove: boolean;
+  onRemove: () => void;
+  removing: boolean;
 }) {
-  const undo = useDeletePayment(tripId);
+  const from = fromName === 'You' ? 'you' : fromName;
+  const to = toName === 'You' ? 'you' : toName;
 
-  async function onUndo() {
+  async function onRemove() {
     const ok = await confirmAction(
-      'Undo this payment?',
-      `Removes the record of ${fromName === 'You' ? 'you' : fromName} paying ${toName === 'You' ? 'you' : toName} ${formatCents(payment.amount_cents)}. Balances go back to before it.`,
-      'Undo payment',
+      'Remove this payment?',
+      `This removes the record of ${from} paying ${to} ${formatCents(payment.amount_cents)}. Balances go back to before it, and the removal is listed under Removed payments.`,
+      'Remove payment',
     );
-    if (ok) undo.mutate(payment.id);
+    if (ok) remove();
   }
 
   return (
@@ -237,7 +297,7 @@ function PaymentRow({
       <View style={styles.balanceRow}>
         <View style={styles.grow}>
           <ThemedText numberOfLines={1}>
-            {fromName} paid {toName === 'You' ? 'you' : toName}
+            {fromName} paid {to}
           </ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
             {friendlyDate(payment.settled_on)}
@@ -248,12 +308,60 @@ function PaymentRow({
           <ThemedText type="small" themeColor="textSecondary">
             Saving
           </ThemedText>
-        ) : (
-          <Button variant="quiet" label="Undo" onPress={onUndo} loading={undo.isPending} />
-        )}
+        ) : canRemove ? (
+          <Button
+            variant="quiet"
+            label="Remove"
+            accessibilityLabel={`Remove the payment of ${fromName} paying ${toName}`}
+            onPress={onRemove}
+            loading={removing}
+          />
+        ) : null}
       </View>
-      {undo.isError ? <Notice tone="error">{friendlyError(undo.error)}</Notice> : null}
     </View>
+  );
+}
+
+/** People who left the trip with money still on them (older trips only), and a way to fix it. */
+function StrandedNotice({
+  tripId,
+  people,
+  canManage,
+}: {
+  tripId: string;
+  people: { member: Member; balance: number }[];
+  canManage: boolean;
+}) {
+  const bringBack = useBringBack(tripId);
+  const names = people.map((p) => p.member.display_name);
+  return (
+    <Notice tone="error">
+      <ThemedText type="strong">
+        {names.join(' and ')} left the trip but {people.length === 1 ? 'still has' : 'still have'} money on them
+      </ThemedText>
+      <ThemedText type="small">
+        {canManage
+          ? 'Bring them back to settle up. You can remove them again once they are at $0.00.'
+          : 'Ask a trip admin to bring them back so everyone can settle up.'}
+      </ThemedText>
+      {people.map(({ member, balance }) => (
+        <View key={member.id} style={styles.balanceRow}>
+          <ThemedText style={styles.grow} numberOfLines={1}>
+            {member.display_name} {balance > 0 ? 'is owed' : 'owes'} {formatCents(Math.abs(balance))}
+          </ThemedText>
+          {canManage ? (
+            <Button
+              variant="secondary"
+              label="Bring back"
+              accessibilityLabel={`Bring ${member.display_name} back`}
+              loading={bringBack.isPending && bringBack.variables === member.id}
+              onPress={() => bringBack.mutate(member.id)}
+            />
+          ) : null}
+        </View>
+      ))}
+      {bringBack.isError ? <ThemedText type="small">{friendlyError(bringBack.error)}</ThemedText> : null}
+    </Notice>
   );
 }
 
@@ -273,4 +381,5 @@ const styles = StyleSheet.create({
   },
   balanceRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, minHeight: 40 },
   amount: { minWidth: 72, textAlign: 'right' },
+  removedRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
 });

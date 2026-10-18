@@ -16,6 +16,7 @@ import { leftOrOver } from '@/lib/budget';
 import { planDays } from '@/lib/itinerary';
 import { friendlyDate, tripMoney } from '@/lib/ledger';
 import { useTripLive } from '@/lib/live';
+import { peopleLine, removeMessage } from '@/lib/people';
 import { describeEditors } from '@/lib/presence';
 import { confirmAction, shareLink, siteUrl } from '@/lib/platform';
 import {
@@ -24,6 +25,7 @@ import {
   useBills,
   usePayments,
   useAddGuest,
+  useBringBack,
   useDeleteTrip,
   useInviteToken,
   useLastSeen,
@@ -89,8 +91,7 @@ export default function TripScreen() {
           {trip.data.name}
         </ThemedText>
         <ThemedText themeColor="textSecondary">
-          {quick ? 'Quick split with guests' : 'Everyone signs in'}, {active.length}{' '}
-          {active.length === 1 ? 'person' : 'people'}
+          {peopleLine(active)}
         </ThemedText>
       </View>
 
@@ -152,6 +153,7 @@ export default function TripScreen() {
           ))}
         </View>
         {isAdmin ? <AddGuest tripId={id} quick={quick} /> : null}
+        <FormerMembers tripId={id} members={(members.data ?? []).filter((m) => m.left_at)} canManage={isAdmin} />
         {!quick && !isAdmin ? (
           <ThemedText type="small" themeColor="textSecondary">
             Want to bring someone? Ask a trip admin for the invite link.
@@ -484,11 +486,8 @@ function MemberRow({
   const error = setRole.error ?? remove.error;
 
   async function onRemove() {
-    const ok = await confirmAction(
-      `Remove ${member.display_name}?`,
-      'They will no longer see this trip. Bills they were on stay in the history.',
-      'Remove',
-    );
+    const { title, body } = removeMessage(member);
+    const ok = await confirmAction(title, body, 'Remove');
     if (ok) remove.mutate(member.id);
   }
 
@@ -534,6 +533,61 @@ function MemberRow({
           {error ? <Notice tone="error">{friendlyError(error)}</Notice> : null}
         </View>
       ) : null}
+    </View>
+  );
+}
+
+/** People who left or were removed, so an admin can bring them back. */
+function FormerMembers({ tripId, members, canManage }: { tripId: string; members: Member[]; canManage: boolean }) {
+  const theme = useTheme();
+  const [open, setOpen] = useState(false);
+  const bringBack = useBringBack(tripId);
+  if (members.length === 0) return null;
+
+  async function onBringBack(member: Member) {
+    const ok = await confirmAction(
+      `Bring ${member.display_name} back?`,
+      member.user_id
+        ? `${member.display_name} will see this trip again and be back on the list of people.`
+        : `${member.display_name} will be back on the list of people.`,
+      'Bring back',
+    );
+    if (ok) bringBack.mutate(member.id);
+  }
+
+  return (
+    <View style={{ gap: Spacing.two }}>
+      <Button
+        variant="quiet"
+        label={`${open ? 'Hide' : 'Show'} people who left (${members.length})`}
+        onPress={() => setOpen((v) => !v)}
+        accessibilityState={{ expanded: open }}
+      />
+      {open
+        ? members.map((m) => (
+            <View key={m.id} style={[styles.member, styles.memberMain, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}>
+              <Avatar name={m.display_name} />
+              <View style={styles.memberText}>
+                <ThemedText type="strong" numberOfLines={1}>
+                  {m.display_name}
+                </ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {m.user_id ? 'Left the trip' : 'Guest, removed from the trip'}
+                </ThemedText>
+              </View>
+              {canManage ? (
+                <Button
+                  variant="secondary"
+                  label="Bring back"
+                  accessibilityLabel={`Bring ${m.display_name} back`}
+                  loading={bringBack.isPending && bringBack.variables === m.id}
+                  onPress={() => onBringBack(m)}
+                />
+              ) : null}
+            </View>
+          ))
+        : null}
+      {bringBack.isError ? <Notice tone="error">{friendlyError(bringBack.error)}</Notice> : null}
     </View>
   );
 }
