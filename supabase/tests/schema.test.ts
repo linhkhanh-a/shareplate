@@ -817,3 +817,45 @@ describe('trip plan (itinerary)', () => {
   });
 });
 
+describe('budgets', () => {
+  const allowance = (memberId: string) =>
+    asUser(LINH, async (tx) => {
+      const r = await tx.query<{ c: string }>(`select daily_allowance_cents::text as c from group_members where id = $1`, [
+        memberId,
+      ]);
+      return Number(r.rows[0].c);
+    });
+
+  it('lets people set their own daily allowance, and admins set anyone’s', async () => {
+    const { anId, guestId } = await createTrip();
+    await asUser(AN, (tx) => tx.query(`select set_daily_allowance($1, 5000)`, [anId]));
+    expect(await allowance(anId)).toBe(5000);
+    await asUser(LINH, (tx) => tx.query(`select set_daily_allowance($1, 3000)`, [guestId]));
+    expect(await allowance(guestId)).toBe(3000);
+  });
+
+  it('stops regular members from setting other people’s allowances or anything else on their row', async () => {
+    const { linhId, anId, guestId } = await createTrip();
+    await expect(asUser(AN, (tx) => tx.query(`select set_daily_allowance($1, 100)`, [guestId]))).rejects.toThrow(/NOT_ADMIN/);
+    await expect(asUser(AN, (tx) => tx.query(`select set_daily_allowance($1, 100)`, [linhId]))).rejects.toThrow(/NOT_ADMIN/);
+    await expect(asUser(OUTSIDER, (tx) => tx.query(`select set_daily_allowance($1, 100)`, [anId]))).rejects.toThrow(
+      /NOT_MEMBER/,
+    );
+    await expect(asUser(AN, (tx) => tx.query(`select set_daily_allowance($1, -5)`, [anId]))).rejects.toThrow(/BAD_ALLOWANCE/);
+    // Regular members still can't change their own row directly (e.g. make themselves admin).
+    const r = await asUser(AN, (tx) => tx.query(`update group_members set role = 'admin' where id = $1`, [anId]));
+    expect(r.affectedRows ?? 0).toBe(0);
+  });
+
+  it('lets admins set the trip budget, but not regular members', async () => {
+    const { groupId } = await createTrip();
+    await asUser(LINH, (tx) => tx.query(`update groups set total_budget_cents = 60000 where id = $1`, [groupId]));
+    const r = await asUser(AN, (tx) => tx.query(`update groups set total_budget_cents = 1 where id = $1`, [groupId]));
+    expect(r.affectedRows ?? 0).toBe(0);
+    const budget = await asUser(AN, (tx) =>
+      tx.query<{ b: string }>(`select total_budget_cents::text as b from groups where id = $1`, [groupId]),
+    );
+    expect(budget.rows[0].b).toBe('60000');
+  });
+});
+

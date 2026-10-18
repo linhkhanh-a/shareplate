@@ -35,6 +35,8 @@ export interface Trip {
 export interface TripDetails extends Trip {
   start_date: string | null;
   end_date: string | null;
+  /** The whole trip's budget, 0 when not set. */
+  total_budget_cents: number;
 }
 
 export interface TripSummary {
@@ -51,6 +53,8 @@ export interface Member {
   joined_at: string;
   /** Set when they left or were removed. Kept so old bills still show their name. */
   left_at: string | null;
+  /** Their own daily spending allowance for the trip, 0 when not set. */
+  daily_allowance_cents: number;
   profile: { zelle_identifier: string | null } | null;
 }
 
@@ -152,11 +156,12 @@ export function useTrip(id: string) {
     queryFn: async (): Promise<TripDetails> => {
       const { data, error } = await supabase
         .from('groups')
-        .select('id, name, mode, created_at, start_date, end_date')
+        .select('id, name, mode, created_at, start_date, end_date, total_budget_cents')
         .eq('id', id)
         .single();
       if (error) throw error;
-      return data as TripDetails;
+      const trip = data as TripDetails;
+      return { ...trip, total_budget_cents: Number(trip.total_budget_cents) };
     },
   });
 }
@@ -181,6 +186,30 @@ export function useSetTripDates(id: string) {
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.trip(id) }),
+  });
+}
+
+/** Admins set the whole trip's budget (0 to clear it). */
+export function useSetTripBudget(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (cents: number) => {
+      const { error } = await supabase.from('groups').update({ total_budget_cents: cents }).eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.trip(id) }),
+  });
+}
+
+/** Sets a daily allowance: your own, or anyone's if you're an admin. */
+export function useSetAllowance(tripId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ memberId, cents }: { memberId: string; cents: number }) => {
+      const { error } = await supabase.rpc('set_daily_allowance', { p_member: memberId, p_cents: cents });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.members(tripId) }),
   });
 }
 
@@ -217,11 +246,11 @@ export function useMembers(tripId: string) {
     queryFn: async (): Promise<Member[]> => {
       const { data, error } = await supabase
         .from('group_members')
-        .select('id, user_id, display_name, role, joined_at, left_at, profile:profiles(zelle_identifier)')
+        .select('id, user_id, display_name, role, joined_at, left_at, daily_allowance_cents, profile:profiles(zelle_identifier)')
         .eq('group_id', tripId)
         .order('joined_at');
       if (error) throw error;
-      return data as unknown as Member[];
+      return (data as unknown as Member[]).map((m) => ({ ...m, daily_allowance_cents: Number(m.daily_allowance_cents ?? 0) }));
     },
   });
 }

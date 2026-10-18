@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { BudgetBar } from '@/components/budget-bar';
 import { LiveBadge } from '@/components/live-badge';
 import { TopBar } from '@/components/top-bar';
 import { Avatar, Button, Divider, Loading, Notice, Pill, Screen, Section, TextField } from '@/components/ui';
@@ -10,6 +11,7 @@ import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { friendlyError } from '@/lib/errors';
+import { leftOrOver } from '@/lib/budget';
 import { planDays } from '@/lib/itinerary';
 import { friendlyDate, tripMoney } from '@/lib/ledger';
 import { useTripLive } from '@/lib/live';
@@ -91,6 +93,8 @@ export default function TripScreen() {
       <MoneySummary tripId={id} myMemberId={me?.id} memberIds={active.map((m) => m.id)} />
 
       <PlanTeaser tripId={id} />
+
+      <BudgetTeaser tripId={id} />
 
       <Section title="Bills">
         {bills.isPending ? <Loading /> : null}
@@ -195,6 +199,39 @@ function MoneySummary({
         textColor={theme.onPrimary}
       />
     </View>
+  );
+}
+
+/** How the trip is tracking against its budget, with the way in. */
+function BudgetTeaser({ tripId }: { tripId: string }) {
+  const trip = useTrip(tripId);
+  const bills = useBills(tripId);
+  if (!trip.data || !bills.data) return null;
+  const spent = bills.data.reduce((s, b) => s + b.total_cents, 0);
+  const budget = trip.data.total_budget_cents;
+  return (
+    <Section title="Budget">
+      {budget > 0 ? (
+        <>
+          <ThemedText style={styles.tabular}>
+            {`${formatCents(spent)} of ${formatCents(budget)} spent. `}
+            <ThemedText type="strong" themeColor={spent > budget ? 'danger' : 'text'}>
+              {leftOrOver(budget - spent)}
+            </ThemedText>
+          </ThemedText>
+          <BudgetBar value={spent} target={budget} max={Math.max(budget, spent)} />
+        </>
+      ) : (
+        <ThemedText type="small" themeColor="textSecondary">
+          No budget yet. See spending day by day and set daily allowances.
+        </ThemedText>
+      )}
+      <Button
+        variant="secondary"
+        label="Open the budget"
+        onPress={() => router.push({ pathname: '/trips/[id]/budget', params: { id: tripId } })}
+      />
+    </Section>
   );
 }
 
