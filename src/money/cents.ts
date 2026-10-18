@@ -43,8 +43,22 @@ export function parseCents(text: string): Cents {
   return minus ? -cents : cents;
 }
 
+let shownSymbol = '$';
+
+/**
+ * Which currency sign amounts are shown with. Set by the trip screens from the
+ * trip's currency; display only, amounts are never converted.
+ */
+export function setCurrencySymbol(symbol: string): void {
+  shownSymbol = symbol;
+}
+
+export function currencySymbol(): string {
+  return shownSymbol;
+}
+
 /** Formats cents for display: 123456 -> "$1,234.56", -500 -> "-$5.00". */
-export function formatCents(cents: Cents, currencySymbol = '$'): string {
+export function formatCents(cents: Cents, currencySymbol = shownSymbol): string {
   assertCents(cents);
   const sign = cents < 0 ? '-' : '';
   const abs = Math.abs(cents);

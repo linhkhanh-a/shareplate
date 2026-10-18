@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useRef, useState, type ComponentRef } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
@@ -13,11 +13,12 @@ import { friendlyError } from '@/lib/errors';
 import { billsCsv, exportSheets, fileSlug } from '@/lib/export';
 import { deliverFile, deliverImage } from '@/lib/files';
 import { shortDate } from '@/lib/itinerary';
+import { zelleOf } from '@/lib/people';
 import { shareText } from '@/lib/platform';
 import { fetchBillItems, useBills, useItinerary, useMembers, usePayments, useTrip } from '@/lib/queries';
 import { personMessage, summaryText, tripSummary, type TripSummary } from '@/lib/summary';
 import { buildXlsx } from '@/lib/xlsx';
-import { formatCents } from '@/money';
+import { currencySymbol, formatCents } from '@/money';
 
 export default function ShareScreen() {
   const { id: tripId } = useLocalSearchParams<{ id: string }>();
@@ -45,6 +46,8 @@ export default function ShareScreen() {
   const input = { tripName: trip.data.name, members: members.data, bills: bills.data, payments: payments.data };
   const summary = tripSummary(input);
   const me = members.data.find((m) => m.user_id === uid && !m.left_at);
+  const myZelle = zelleOf(me);
+  const owedToMe = summary.transfers.filter((t) => t.toId === me?.id).reduce((sum, t) => sum + t.amount, 0);
   const quick = trip.data.mode === 'quick';
   const slug = fileSlug(trip.data.name);
   const dates =
@@ -84,7 +87,7 @@ export default function ShareScreen() {
   const exportXlsx = () =>
     run('xlsx', async () => {
       const items = await fetchBillItems(bills.data!.filter((b) => b.split_mode === 'itemized').map((b) => b.id));
-      const bytes = buildXlsx(exportSheets({ ...input, activities: plan.data ?? [], items }));
+      const bytes = buildXlsx(exportSheets({ ...input, activities: plan.data ?? [], items }), currencySymbol());
       await deliverFile(
         `${slug}.xlsx`,
         bytes,
@@ -117,6 +120,16 @@ export default function ShareScreen() {
 
       {status ? <Notice tone={status.tone}>{status.text}</Notice> : null}
 
+      {owedToMe > 0 && !myZelle ? (
+        <Notice>
+          <ThemedText type="strong">Add your Zelle info first</ThemedText>
+          <ThemedText type="small">
+            {`People owe you ${formatCents(owedToMe)}. Add your Zelle email or phone so the messages tell them where to send it.`}
+          </ThemedText>
+          <Button variant="secondary" label="Add Zelle info" onPress={() => router.push('/profile')} />
+        </Notice>
+      ) : null}
+
       <Section title="Summary">
         <View ref={card} collapsable={false}>
           <SummaryCard summary={summary} dates={dates} />
@@ -141,7 +154,7 @@ export default function ShareScreen() {
           {people.map((p) => {
             const pays = summary.transfers.filter((t) => t.fromId === p.id).reduce((s, t) => s + t.amount, 0);
             const gets = summary.transfers.filter((t) => t.toId === p.id).reduce((s, t) => s + t.amount, 0);
-            const line = pays > 0 ? `Owes ${formatCents(pays)}` : gets > 0 ? `Is owed ${formatCents(gets)}` : 'Settled up';
+            const line = pays > 0 ? `Owes ${formatCents(pays)}` : gets > 0 ? `Is owed ${formatCents(gets)}` : 'Settled up, nothing to pay';
             const name = p.id === me?.id ? `${p.name} (you)` : p.isGuest ? `${p.name} (guest)` : p.name;
             return (
               <PersonRow
@@ -149,7 +162,7 @@ export default function ShareScreen() {
                 name={name}
                 avatarName={p.name}
                 line={`Share ${formatCents(p.share)} · ${line}`}
-                onSend={() => shareMessage(personMessage(summary, p.id), `person-${p.id}`)}
+                onSend={() => shareMessage(personMessage(summary, p.id, me?.id), `person-${p.id}`)}
                 loading={busy === `person-${p.id}`}
                 webCopy={Platform.OS === 'web'}
               />
@@ -219,11 +232,9 @@ function SummaryCard({ summary: s, dates }: { summary: TripSummary; dates: strin
                   {formatCents(t.amount)}
                 </ThemedText>
               </View>
-              {t.toZelle ? (
-                <ThemedText type="small" themeColor="textSecondary">
-                  Zelle: {t.toZelle}
-                </ThemedText>
-              ) : null}
+              <ThemedText type="small" themeColor="textSecondary">
+                Zelle: {t.toZelle ?? 'not added yet'}
+              </ThemedText>
             </View>
           ))
         )}

@@ -1,5 +1,6 @@
 import { tripMoney } from '@/lib/ledger';
 import type { Bill, Member, Payment } from '@/lib/queries';
+import { zelleOf } from '@/lib/people';
 import { formatCents, type Cents } from '@/money';
 
 export interface PersonTotals {
@@ -65,7 +66,7 @@ export function tripSummary(input: {
       id: m.id,
       name: m.display_name,
       isGuest: !m.user_id,
-      zelle: m.profile?.zelle_identifier ?? null,
+      zelle: zelleOf(m),
       paid,
       share,
       sent,
@@ -85,7 +86,7 @@ export function tripSummary(input: {
       fromName: name(t.fromId),
       toName: name(t.toId),
       amount: t.amountCents,
-      toZelle: byId.get(t.toId)?.profile?.zelle_identifier ?? null,
+      toZelle: zelleOf(byId.get(t.toId)),
     })),
   };
 }
@@ -108,28 +109,36 @@ export function summaryText(s: TripSummary): string {
   return lines.join('\n');
 }
 
-/** A personal message for one person: their share and who to pay (or who pays them). */
-export function personMessage(s: TripSummary, personId: string): string {
+/**
+ * A personal message for one person: their share and who to pay (or who pays
+ * them). `senderId` is whoever is sending it, so money owed to them reads
+ * "send … to me".
+ */
+export function personMessage(s: TripSummary, personId: string, senderId?: string): string {
   const p = s.people.find((x) => x.id === personId);
   if (!p) return '';
-  const first = p.name.split(' ')[0];
-  const lines = [`Hi ${first}! Your share of ${s.tripName} comes to ${formatCents(p.share)}.`];
+  // The whole name: a first word can be a family name ("Nguyễn") or a nickname fragment.
+  const lines = [`Hi ${p.name}! Your share of ${s.tripName} comes to ${formatCents(p.share)}.`];
   const pays = s.transfers.filter((t) => t.fromId === personId);
   const gets = s.transfers.filter((t) => t.toId === personId);
+  const payLine = (t: SummaryTransfer) => {
+    const to = t.toId === senderId ? 'me' : t.toName;
+    return `${formatCents(t.amount)} to ${to}${t.toZelle ? ` by Zelle at ${t.toZelle}` : ''}`;
+  };
   if (pays.length > 0) {
     lines.push(
       pays.length === 1
-        ? `Please send ${formatCents(pays[0].amount)} to ${pays[0].toName}${zelleNote(pays[0])}.`
-        : `Please send:\n${pays.map((t) => `• ${formatCents(t.amount)} to ${t.toName}${zelleNote(t)}`).join('\n')}`,
+        ? `Please send ${payLine(pays[0])}.`
+        : `Please send:\n${pays.map((t) => `• ${payLine(t)}`).join('\n')}`,
     );
   } else if (gets.length > 0) {
     lines.push(
       `You're owed ${formatCents(gets.reduce((sum, t) => sum + t.amount, 0))}: ${gets
-        .map((t) => `${t.fromName} will send you ${formatCents(t.amount)}`)
+        .map((t) => (t.fromId === senderId ? `I'll send you ${formatCents(t.amount)}` : `${t.fromName} will send you ${formatCents(t.amount)}`))
         .join(', ')}.`,
     );
   } else {
-    lines.push('You’re all settled up.');
+    lines.push('You’re all settled up, so there’s nothing to pay.');
   }
   lines.push('Thanks!');
   return lines.join('\n');

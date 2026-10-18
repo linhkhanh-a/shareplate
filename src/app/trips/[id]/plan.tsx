@@ -11,6 +11,7 @@ import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { friendlyError } from '@/lib/errors';
+import { confirmAction } from '@/lib/platform';
 import {
   budgetLine,
   budgetTotals,
@@ -269,6 +270,12 @@ function TripDates({ trip, canEdit }: { trip: TripDetails; canEdit: boolean }) {
   }
 
   async function onClear() {
+    const ok = await confirmAction(
+      'Clear the trip dates?',
+      'The plan keeps its days and activities. Bills keep their dates too.',
+      'Clear dates',
+    );
+    if (!ok) return;
     try {
       await setDates.mutateAsync({ start_date: null, end_date: null });
       setStart('');

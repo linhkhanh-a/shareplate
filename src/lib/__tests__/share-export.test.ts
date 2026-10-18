@@ -7,6 +7,7 @@ import { personMessage, summaryText, tripSummary } from '@/lib/summary';
 import { buildXlsx, columnName, safeSheetNames } from '@/lib/xlsx';
 
 const member = (id: string, name: string, zelle: string | null, guest = false): Member => ({
+  zelle_identifier: guest ? zelle : null,
   id,
   user_id: guest ? null : `u-${id}`,
   display_name: name,
@@ -20,7 +21,7 @@ const member = (id: string, name: string, zelle: string | null, guest = false): 
 const members = [
   member('linh', 'Linh Bui', 'linh@example.com'),
   member('an', 'An Nguyễn', '(614) 555-0142'),
-  member('huong', 'Hương', null, true),
+  member('huong', 'Hương', 'huong@example.com', true),
 ];
 
 const bill = (id: string, date: string, payer: string, shares: [string, number][], extra: Partial<Bill> = {}): Bill => {
@@ -121,11 +122,23 @@ describe('trip summary', () => {
       ].join('\n'),
     );
     expect(personMessage(s, 'huong')).toBe(
-      'Hi Hương! Your share of Đà Lạt spring break comes to $32.00.\nPlease send $22.00 to Linh Bui (Zelle: linh@example.com).\nThanks!',
+      'Hi Hương! Your share of Đà Lạt spring break comes to $32.00.\nPlease send $22.00 to Linh Bui by Zelle at linh@example.com.\nThanks!',
+    );
+    // Sent by Linh, money owed to Linh reads "to me".
+    expect(personMessage(s, 'an', 'linh')).toBe(
+      'Hi An Nguyễn! Your share of Đà Lạt spring break comes to $26.00.\nPlease send $8.00 to me by Zelle at linh@example.com.\nThanks!',
     );
     expect(personMessage(s, 'linh')).toBe(
-      "Hi Linh! Your share of Đà Lạt spring break comes to $20.00.\nYou're owed $30.00: Hương will send you $22.00, An Nguyễn will send you $8.00.\nThanks!",
+      "Hi Linh Bui! Your share of Đà Lạt spring break comes to $20.00.\nYou're owed $30.00: Hương will send you $22.00, An Nguyễn will send you $8.00.\nThanks!",
     );
+  });
+});
+
+describe('messages for people who are settled', () => {
+  it('says there is nothing to pay', () => {
+    const s = tripSummary({ ...input, payments: [...payments, { id: 'p2', from_member_id: 'huong', to_member_id: 'linh', amount_cents: 2200, settled_on: '2026-10-26', created_at: '', created_by: null }, { id: 'p3', from_member_id: 'an', to_member_id: 'linh', amount_cents: 800, settled_on: '2026-10-26', created_at: '', created_by: null }] });
+    expect(s.transfers).toEqual([]);
+    expect(personMessage(s, 'an')).toContain('You’re all settled up, so there’s nothing to pay.');
   });
 });
 
@@ -141,7 +154,7 @@ describe('spreadsheet export', () => {
     expect(billsSheet.rows[1].slice(-3)).toEqual([null, { money: 6 }, { money: 12 }]);
     expect(billsSheet.rows[2][10]).toBe('Night market');
     expect(items.rows[1]).toEqual([{ date: '2026-10-24' }, 'Hotpot, "the good one"', 'Hotpot for 3', { money: 60 }, 'Linh Bui, An Nguyễn, Hương']);
-    expect(people.rows[3]).toEqual(['Hương (guest)', { money: 0 }, { money: 32 }, { money: 10 }, { money: 0 }, { money: -22 }, 'Owes', '']);
+    expect(people.rows[3]).toEqual(['Hương (guest)', { money: 0 }, { money: 32 }, { money: 10 }, { money: 0 }, { money: -22 }, 'Owes', 'huong@example.com']);
   });
 
   it('writes CSV that spreadsheets open safely', () => {
@@ -188,5 +201,13 @@ describe('spreadsheet export', () => {
     expect(safeSheetNames(['Bills', 'bills', 'a/b:c', 'x'.repeat(40)])).toEqual(['Bills', 'bills 2', 'a b c', 'x'.repeat(31)]);
     expect(fileSlug('Đà Lạt spring break!')).toBe('da-lat-spring-break');
     expect(fileSlug('🎉')).toBe('trip');
+  });
+});
+
+describe('spreadsheet currency', () => {
+  it('shows money cells with the trip currency sign', () => {
+    const files = unzipSync(buildXlsx(exportSheets(input), 'CHF '));
+    expect(strFromU8(files['xl/styles.xml'])).toContain('formatCode="&quot;CHF &quot;#,##0.00"');
+    expect(strFromU8(unzipSync(buildXlsx(exportSheets(input)))['xl/styles.xml'])).toContain('&quot;$&quot;#,##0.00');
   });
 });

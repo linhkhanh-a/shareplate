@@ -54,3 +54,16 @@ export function formerOnBill(
   const ids = new Set([bill.paid_by_member_id, ...bill.shares.map((s) => s.group_member_id)]);
   return members.filter((m) => m.left_at && ids.has(m.id));
 }
+
+/** Where to send someone money: their own profile, or what an admin recorded for a guest. */
+export function zelleOf(member: Pick<Member, 'user_id' | 'profile' | 'zelle_identifier'> | undefined): string | null {
+  if (!member) return null;
+  if (member.user_id) return member.profile?.zelle_identifier || null;
+  return member.zelle_identifier || null;
+}
+
+/** The note at the top of Settle up, based on where the trip is in its dates. */
+export function settleTiming(endDate: string | null, today: string): 'during' | 'over' | null {
+  if (!endDate) return null;
+  return today > endDate ? 'over' : 'during';
+}

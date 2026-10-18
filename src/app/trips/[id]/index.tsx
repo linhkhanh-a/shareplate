@@ -6,7 +6,7 @@ import { ThemedText } from '@/components/themed-text';
 import { BudgetBar } from '@/components/budget-bar';
 import { LiveBadge } from '@/components/live-badge';
 import { TopBar } from '@/components/top-bar';
-import { Avatar, Button, Divider, Loading, Notice, Pill, Screen, Section, TextField } from '@/components/ui';
+import { Avatar, Button, Chip, ChipGroup, Divider, Loading, Notice, Pill, Screen, Section, TextField } from '@/components/ui';
 import { Fonts, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
@@ -16,7 +16,7 @@ import { leftOrOver } from '@/lib/budget';
 import { planDays } from '@/lib/itinerary';
 import { friendlyDate, tripMoney } from '@/lib/ledger';
 import { useTripLive } from '@/lib/live';
-import { peopleLine, removeMessage } from '@/lib/people';
+import { peopleLine, removeMessage, zelleOf } from '@/lib/people';
 import { describeEditors } from '@/lib/presence';
 import { confirmAction, shareLink, siteUrl } from '@/lib/platform';
 import {
@@ -37,13 +37,15 @@ import {
   useRemoveMember,
   useRenameTrip,
   useResetInvite,
+  useSetGuestZelle,
   useSetRole,
+  useSetTripCurrency,
   useTrip,
   type Bill,
   type Member,
   type Trip,
 } from '@/lib/queries';
-import { formatCents } from '@/money';
+import { CURRENCIES, formatCents } from '@/money';
 
 export default function TripScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -200,16 +202,11 @@ function MoneySummary({
       </ThemedText>
       <View style={styles.summaryButtons}>
         <Button
-          label="Scan receipt"
-          onPress={() => router.push({ pathname: '/trips/[id]/scan', params: { id: tripId } })}
+          label="Add bill"
+          accessibilityHint="Upload a receipt or enter a bill by hand"
+          onPress={() => router.push({ pathname: '/trips/[id]/add', params: { id: tripId } })}
           style={{ ...styles.summaryButton, backgroundColor: theme.accent, borderColor: theme.accent }}
           textColor={theme.onAccent}
-        />
-        <Button
-          label="Add bill"
-          variant="secondary"
-          onPress={() => router.push({ pathname: '/trips/[id]/bill', params: { id: tripId } })}
-          style={styles.summaryButton}
         />
       </View>
       <Button
@@ -476,10 +473,13 @@ function MemberRow({
   const setRole = useSetRole(tripId);
   const remove = useRemoveMember(tripId);
   const isGuest = !member.user_id;
+  const zelle = zelleOf(member);
   const detail = isGuest
-    ? 'Guest, no account'
-    : member.profile?.zelle_identifier
-      ? `Zelle: ${member.profile.zelle_identifier}`
+    ? zelle
+      ? `Guest · Zelle: ${zelle}`
+      : 'Guest, no account'
+    : zelle
+      ? `Zelle: ${zelle}`
       : 'No Zelle info yet';
   // Admins manage everyone else; your own role changes (stepping down) also live here.
   const manageable = canManage && !(isMe && member.role !== 'admin');
@@ -527,12 +527,51 @@ function MemberRow({
               }
             />
           ) : null}
+          {isGuest ? <GuestZelle tripId={tripId} member={member} /> : null}
           {!isMe ? (
             <Button variant="danger" label="Remove from trip" loading={remove.isPending} onPress={onRemove} />
           ) : null}
           {error ? <Notice tone="error">{friendlyError(error)}</Notice> : null}
         </View>
       ) : null}
+    </View>
+  );
+}
+
+/** A guest has no account, so an admin can note where to send them money. */
+function GuestZelle({ tripId, member }: { tripId: string; member: Member }) {
+  const save = useSetGuestZelle(tripId);
+  const [value, setValue] = useState(member.zelle_identifier ?? '');
+  const [saved, setSaved] = useState(false);
+  const changed = value.trim() !== (member.zelle_identifier ?? '');
+
+  async function onSave() {
+    setSaved(false);
+    try {
+      await save.mutateAsync({ memberId: member.id, zelle: value.trim() || null });
+      setSaved(true);
+    } catch {
+      // Shown below.
+    }
+  }
+
+  return (
+    <View style={{ gap: Spacing.two }}>
+      <TextField
+        label={`${member.display_name}'s Zelle email or phone`}
+        hint="Optional. Shown when someone needs to pay them back."
+        value={value}
+        onChangeText={(v) => {
+          setValue(v);
+          setSaved(false);
+        }}
+        maxLength={254}
+        autoCapitalize="none"
+        keyboardType="email-address"
+      />
+      <Button variant="secondary" label="Save Zelle info" onPress={onSave} loading={save.isPending} disabled={!changed} />
+      {saved ? <Notice tone="success">Saved.</Notice> : null}
+      {save.isError ? <Notice tone="error">{friendlyError(save.error)}</Notice> : null}
     </View>
   );
 }
@@ -673,9 +712,45 @@ function TripSettings({ trip }: { trip: Trip }) {
       />
       {saved ? <Notice tone="success">Trip renamed.</Notice> : null}
       {rename.isError ? <Notice tone="error">{friendlyError(rename.error)}</Notice> : null}
+      <CurrencyPicker tripId={trip.id} />
       <Button label="Delete trip" variant="danger" onPress={onDelete} loading={del.isPending} />
       {del.isError ? <Notice tone="error">{friendlyError(del.error)}</Notice> : null}
     </Section>
+  );
+}
+
+/** The currency amounts are shown in. Nothing is converted: it only changes the sign. */
+function CurrencyPicker({ tripId }: { tripId: string }) {
+  const trip = useTrip(tripId);
+  const set = useSetTripCurrency(tripId);
+  const [open, setOpen] = useState(false);
+  const current = trip.data?.currency ?? 'USD';
+  const name = CURRENCIES.find((c) => c.code === current)?.name ?? current;
+  return (
+    <View style={{ gap: Spacing.two }}>
+      <ThemedText type="strong">Currency</ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        {`Amounts are shown in ${name} (${current}). Changing it only changes the sign; nothing is converted.`}
+      </ThemedText>
+      {open ? (
+        <ChipGroup label="Show amounts in">
+          {CURRENCIES.map((c) => (
+            <Chip
+              key={c.code}
+              label={`${c.code} ${c.symbol.trim()}`}
+              selected={current === c.code}
+              onPress={() => {
+                set.mutate(c.code);
+                setOpen(false);
+              }}
+            />
+          ))}
+        </ChipGroup>
+      ) : (
+        <Button variant="secondary" label="Change currency" onPress={() => setOpen(true)} loading={set.isPending} />
+      )}
+      {set.isError ? <Notice tone="error">{friendlyError(set.error)}</Notice> : null}
+    </View>
   );
 }
 

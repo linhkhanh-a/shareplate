@@ -8,6 +8,7 @@ import { Button, Notice, Screen, TextField } from '@/components/ui';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { friendlyError } from '@/lib/errors';
+import { confirmAction } from '@/lib/platform';
 import { useCreateTrip, type TripMode } from '@/lib/queries';
 
 const MODES: { value: TripMode; title: string; detail: string }[] = [
@@ -125,7 +126,11 @@ export default function NewTripScreen() {
                   key={`${g}-${i}`}
                   accessibilityRole="button"
                   accessibilityLabel={`Remove ${g}`}
-                  onPress={() => setGuests((list) => list.filter((_, j) => j !== i))}
+                  onPress={async () => {
+                    if (await confirmAction(`Remove ${g}?`, 'They won’t be added to the trip.', 'Remove')) {
+                      setGuests((list) => list.filter((_, j) => j !== i));
+                    }
+                  }}
                   style={[styles.guest, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}>
                   <ThemedText type="small">{g}</ThemedText>
                   <ThemedText type="small" themeColor="textSecondary">

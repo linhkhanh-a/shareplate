@@ -38,6 +38,8 @@ export interface TripDetails extends Trip {
   end_date: string | null;
   /** The whole trip's budget, 0 when not set. */
   total_budget_cents: number;
+  /** Which currency amounts are shown in ("USD", "CHF"…). Display only. */
+  currency: string;
 }
 
 export interface TripSummary {
@@ -57,6 +59,8 @@ export interface Member {
   /** Their own daily spending allowance for the trip, 0 when not set. */
   daily_allowance_cents: number;
   profile: { zelle_identifier: string | null } | null;
+  /** A guest's Zelle info, recorded by an admin (null for people with an account). */
+  zelle_identifier: string | null;
 }
 
 export interface InvitePreview {
@@ -166,7 +170,7 @@ export function useTrip(id: string) {
     queryFn: async (): Promise<TripDetails> => {
       const { data, error } = await supabase
         .from('groups')
-        .select('id, name, mode, created_at, start_date, end_date, total_budget_cents')
+        .select('id, name, mode, created_at, start_date, end_date, total_budget_cents, currency')
         .eq('id', id)
         .single();
       if (error) throw error;
@@ -184,6 +188,18 @@ export function useRenameTrip(id: string) {
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries(),
+  });
+}
+
+/** Admins choose the currency the trip's amounts are shown in (no conversion). */
+export function useSetTripCurrency(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (currency: string) => {
+      const { error } = await supabase.from('groups').update({ currency }).eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.trip(id) }),
   });
 }
 
@@ -256,7 +272,7 @@ export function useMembers(tripId: string) {
     queryFn: async (): Promise<Member[]> => {
       const { data, error } = await supabase
         .from('group_members')
-        .select('id, user_id, display_name, role, joined_at, left_at, daily_allowance_cents, profile:profiles(zelle_identifier)')
+        .select('id, user_id, display_name, role, joined_at, left_at, daily_allowance_cents, zelle_identifier, profile:profiles(zelle_identifier)')
         .eq('group_id', tripId)
         .order('joined_at');
       if (error) throw error;
@@ -307,6 +323,18 @@ export function useRemoveMember(tripId: string) {
         qc.invalidateQueries({ queryKey: keys.members(tripId) }),
         qc.invalidateQueries({ queryKey: keys.events(tripId) }),
       ]),
+  });
+}
+
+/** Records a guest's Zelle email or phone (admins only). */
+export function useSetGuestZelle(tripId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ memberId, zelle }: { memberId: string; zelle: string | null }) => {
+      const { error } = await supabase.from('group_members').update({ zelle_identifier: zelle }).eq('id', memberId);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.members(tripId) }),
   });
 }
 
@@ -406,6 +434,10 @@ export interface Bill {
   discount_cents: number;
   tax_cents: number;
   tip_cents: number;
+  /** Discount, tax and tip as typed percentages (basis points), null when typed as amounts. */
+  discount_rate_bp?: number | null;
+  tax_rate_bp?: number | null;
+  tip_rate_bp?: number | null;
   total_cents: number;
   bill_date: string;
   bill_image_path: string | null;
@@ -452,7 +484,7 @@ export function useBills(tripId: string) {
       const { data, error } = await supabase
         .from('bills')
         .select(
-          'id, title, vendor, category, split_mode, subtotal_cents, discount_cents, tax_cents, tip_cents, total_cents, bill_date, bill_image_path, paid_by_member_id, itinerary_item_id, version, created_at, shares:bill_participants(group_member_id, share_input, amount_cents, items_cents, discount_cents, tax_cents, tip_cents)',
+          'id, title, vendor, category, split_mode, subtotal_cents, discount_cents, tax_cents, tip_cents, discount_rate_bp, tax_rate_bp, tip_rate_bp, total_cents, bill_date, bill_image_path, paid_by_member_id, itinerary_item_id, version, created_at, shares:bill_participants(group_member_id, share_input, amount_cents, items_cents, discount_cents, tax_cents, tip_cents)',
         )
         .eq('group_id', tripId)
         .order('bill_date', { ascending: false })

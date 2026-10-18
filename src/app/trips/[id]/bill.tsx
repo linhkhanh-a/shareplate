@@ -1,8 +1,10 @@
-import { Redirect, router, useLocalSearchParams } from 'expo-router';
+import { Redirect, router, useLocalSearchParams, usePreventRemove } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { BillEndActions, returnToTrip } from '@/components/bill-end-actions';
+import { DateField } from '@/components/date-field';
 import { FormerOnBillNotice } from '@/components/former-on-bill';
 import { PlanPicker } from '@/components/plan-picker';
 import { TopBar } from '@/components/top-bar';
@@ -26,7 +28,6 @@ import { friendlyError } from '@/lib/errors';
 import {
   CATEGORIES,
   computeSplit,
-  friendlyDate,
   isValidIsoDate,
   shareInputText,
   todayIso,
@@ -34,18 +35,14 @@ import {
   type SplitRow,
 } from '@/lib/ledger';
 import { useTripLive } from '@/lib/live';
-import { confirmAction } from '@/lib/platform';
+import { dateChoices } from '@/lib/dates';
 import { formerOnBill } from '@/lib/people';
+import { confirmAction } from '@/lib/platform';
 import { describeEditors } from '@/lib/presence';
-import { useBills, useDeleteBill, useMembers, usePinBill, useSaveBill, type Bill, type Member } from '@/lib/queries';
-import { formatCents } from '@/money';
+import { useBills, useMembers, usePinBill, useSaveBill, useTrip, type Bill, type Member } from '@/lib/queries';
+import { centsToText, currencySymbol, formatCents, normalizeMoneyText, normalizePercentText } from '@/money';
 
 /** Back to the trip, even when the bill was opened directly from a link. */
-function returnToTrip(tripId: string) {
-  if (router.canGoBack()) router.back();
-  else router.replace({ pathname: '/trips/[id]', params: { id: tripId } });
-}
-
 const MODES: { value: ManualMode; label: string }[] = [
   { value: 'equal', label: 'Equally' },
   { value: 'percent', label: 'By percent' },
@@ -137,7 +134,6 @@ function BillForm({
   // People on this bill who have left the trip: their share is locked until they're brought back.
   const former = existing ? formerOnBill(members, existing) : [];
   const save = useSaveBill(tripId);
-  const del = useDeleteBill(tripId);
   const pin = usePinBill(tripId);
   const [activityId, setActivityId] = useState<string | null>(existing ? existing.itinerary_item_id : (pinTo ?? null));
   const editable = !existing || existing.split_mode !== 'itemized';
@@ -155,7 +151,7 @@ function BillForm({
     existing && existing.split_mode !== 'itemized' ? (existing.split_mode as ManualMode) : 'equal';
 
   const [title, setTitle] = useState(existing?.title ?? '');
-  const [amount, setAmount] = useState(existing ? formatCents(existing.total_cents).replace(/[$,]/g, '') : '');
+  const [amount, setAmount] = useState(existing ? centsToText(existing.total_cents) : '');
   const [payer, setPayer] = useState(existing?.paid_by_member_id ?? myMemberId ?? people[0]?.id ?? '');
   const [date, setDate] = useState(existing?.bill_date ?? todayIso());
   const [category, setCategory] = useState(existing?.category ?? 'Food');
@@ -171,7 +167,24 @@ function BillForm({
     }),
   );
   const [attempted, setAttempted] = useState(false);
-  const [quickDates] = useState(() => [todayIso(), todayIso(new Date(Date.now() - 86_400_000))]);
+  const trip = useTrip(tripId);
+  const dateOptions = dateChoices(trip.data?.start_date ?? null, trip.data?.end_date ?? null);
+
+  // Ask before leaving with unsaved changes.
+  const [startState] = useState(() => JSON.stringify({ title, amount, payer, date, category, mode, rows }));
+  const dirty = JSON.stringify({ title, amount, payer, date, category, mode, rows }) !== startState;
+  const [left, setLeft] = useState(false);
+  const allowLeave = usePreventRemove(dirty && !left, ({ repeat }) => {
+    confirmAction('Leave this bill?', "What you typed won't be saved.", 'Leave').then((ok) => {
+      if (!ok) return;
+      setLeft(true);
+      repeat();
+    });
+  });
+  function leaving() {
+    setLeft(true);
+    allowLeave();
+  }
 
   const split = computeSplit(mode, amount, rows);
   const dateOk = isValidIsoDate(date);
@@ -213,27 +226,12 @@ function BillForm({
       // Shown below from save.error.
       return;
     }
+    leaving();
     try {
       if (activityId !== (existing?.itinerary_item_id ?? null)) await pin.mutateAsync({ billId: savedId, activityId });
       returnToTrip(tripId);
     } catch {
       // Shown below from pin.error; the bill itself is saved.
-    }
-  }
-
-  async function onDelete() {
-    if (!existing) return;
-    const ok = await confirmAction(
-      'Delete this bill?',
-      'Balances will update for everyone on it. This can’t be undone.',
-      'Delete bill',
-    );
-    if (!ok) return;
-    try {
-      await del.mutateAsync(existing.id);
-      returnToTrip(tripId);
-    } catch {
-      // Shown below.
     }
   }
 
@@ -254,6 +252,26 @@ function BillForm({
       <ThemedText type="title" accessibilityRole="header">
         {existing ? 'Edit bill' : 'New bill'}
       </ThemedText>
+
+      {!existing ? (
+        <Segmented
+          label="How to enter it"
+          options={[
+            { value: 'total', label: 'One total' },
+            { value: 'items', label: 'By item' },
+          ]}
+          value="total"
+          onChange={async (v) => {
+            if (v !== 'items') return;
+            if (dirty && !(await confirmAction('Switch to by item?', "What you typed here won't be kept.", 'Switch'))) return;
+            leaving();
+            router.replace({
+              pathname: '/trips/[id]/scan',
+              params: pinTo ? { id: tripId, pin: pinTo, manual: '1' } : { id: tripId, manual: '1' },
+            });
+          }}
+        />
+      ) : null}
 
       <FormerOnBillNotice tripId={tripId} people={former} canManage={isAdmin} />
 
@@ -286,11 +304,13 @@ function BillForm({
       <View style={styles.amountBlock}>
         <ThemedText type="strong">Amount</ThemedText>
         <View style={[styles.amountBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <ThemedText style={[styles.amountText, { color: theme.textSecondary }]}>$</ThemedText>
+          <ThemedText style={[styles.amountText, { color: theme.textSecondary }]}>{currencySymbol().trim()}</ThemedText>
           <TextInput
-            accessibilityLabel="Amount in dollars"
+            accessibilityLabel="Amount"
             value={amount}
             onChangeText={(t) => setAmount(t.replace(/[^0-9.,]/g, ''))}
+            // Rounded to the cent as soon as you leave the box, so what you see is what's saved.
+            onBlur={() => setAmount((a) => normalizeMoneyText(a) ?? a)}
             placeholder="0.00"
             placeholderTextColor={theme.textSecondary}
             keyboardType="decimal-pad"
@@ -314,23 +334,7 @@ function BillForm({
           ))}
       </ChipGroup>
 
-      <View style={{ gap: Spacing.two }}>
-        <ChipGroup label="Date">
-          {quickDates.map((d) => (
-            <Chip key={d} label={friendlyDate(d)} selected={date === d} onPress={() => editable && setDate(d)} />
-          ))}
-        </ChipGroup>
-        <TextField
-          label="Or type a date"
-          hint="Year-month-day, like 2026-10-17"
-          value={date}
-          onChangeText={setDate}
-          error={!dateOk ? 'Use year-month-day, like 2026-10-17.' : null}
-          editable={editable}
-          maxLength={10}
-          autoCapitalize="none"
-        />
-      </View>
+      <DateField label="Date" value={date} onChange={setDate} choices={dateOptions} editable={editable} />
 
       <ChipGroup label="Category">
         {CATEGORIES.map((c) => (
@@ -363,12 +367,17 @@ function BillForm({
                 </Pressable>
                 {mode !== 'equal' && row.included ? (
                   <View style={[styles.shareInput, { borderColor: theme.border, backgroundColor: theme.background }]}>
-                    {mode === 'exact' ? <ThemedText themeColor="textSecondary">$</ThemedText> : null}
+                    {mode === 'exact' ? <ThemedText themeColor="textSecondary">{currencySymbol().trim()}</ThemedText> : null}
                     <TextInput
                       accessibilityLabel={`${m.display_name}'s ${mode === 'percent' ? 'percentage' : 'amount'}`}
                       value={row.input}
                       onChangeText={(t) => updateRow(m.id, { input: t.replace(/[^0-9.,]/g, '') })}
-                      placeholder={mode === 'percent' ? '0' : '0.00'}
+                      onBlur={() => {
+                        const normal = mode === 'percent' ? normalizePercentText(row.input) : normalizeMoneyText(row.input);
+                        if (normal !== null && normal !== row.input) updateRow(m.id, { input: normal });
+                      }}
+                      // Left blank, it shows the rest of the bill in grey: that's filled in automatically.
+                      placeholder={split.auto[m.id] ?? (mode === 'percent' ? '0' : '0.00')}
                       placeholderTextColor={theme.textSecondary}
                       keyboardType="decimal-pad"
                       inputMode="decimal"
@@ -377,6 +386,11 @@ function BillForm({
                     />
                     {mode === 'percent' ? <ThemedText themeColor="textSecondary">%</ThemedText> : null}
                   </View>
+                ) : null}
+                {mode !== 'equal' && row.included && split.auto[m.id] !== undefined ? (
+                  <ThemedText type="small" themeColor="textSecondary" accessibilityLabel={`${m.display_name}'s share is filled in automatically`}>
+                    auto
+                  </ThemedText>
                 ) : null}
                 <ThemedText type="money" style={styles.shareAmount}>
                   {row.included && share ? formatCents(share.amountCents) : ''}
@@ -391,28 +405,19 @@ function BillForm({
           accessibilityLiveRegion="polite">
           {split.ok ? split.status : [split.status, split.message].filter(Boolean).join('. ')}
         </ThemedText>
+        {mode !== 'equal' ? (
+          <ThemedText type="small" themeColor="textSecondary">
+            Leave someone blank and they get whatever is left, shown in grey.
+          </ThemedText>
+        ) : null}
       </Section>
 
       {existing ? (
-        <View style={{ gap: Spacing.two }}>
-          <Button
-            label="Delete bill"
-            variant="danger"
-            onPress={onDelete}
-            loading={del.isPending}
-            disabled={former.length > 0}
-          />
-          {former.length > 0 ? (
-            <ThemedText type="small" themeColor="textSecondary">
-              To delete this bill, bring {former.map((m) => m.display_name).join(' and ')} back first.
-            </ThemedText>
-          ) : null}
-          {del.isError ? <Notice tone="error">{friendlyError(del.error)}</Notice> : null}
-          <ThemedText type="small" themeColor="textSecondary">
-            Paid by {nameOf(existing.paid_by_member_id)}. Changes update everyone&apos;s balances right away.
-          </ThemedText>
-        </View>
+        <ThemedText type="small" themeColor="textSecondary">
+          Paid by {nameOf(existing.paid_by_member_id)}. Changes update everyone&apos;s balances right away.
+        </ThemedText>
       ) : null}
+      <BillEndActions tripId={tripId} existing={existing} former={former} dirty={dirty} beforeLeave={leaving} />
     </Screen>
   );
 }

@@ -1,5 +1,5 @@
 import { isValidIsoDate } from '@/lib/ledger';
-import { formatCents, parseCents, type Cents } from '@/money';
+import { centsToText, formatCents, parseMoneyText, type Cents } from '@/money';
 
 /** One activity in the trip plan, as the screens use it. */
 export interface Activity {
@@ -241,7 +241,7 @@ export function draftFromActivity(a: Activity): ActivityDraft {
     end: formatTime(a.end_time),
     location: a.location ?? '',
     notes: a.notes ?? '',
-    budget: a.proposed_budget_cents ? formatCents(a.proposed_budget_cents).replace(/[$,]/g, '') : '',
+    budget: a.proposed_budget_cents ? centsToText(a.proposed_budget_cents) : '',
   };
 }
 
@@ -270,7 +270,7 @@ export function checkActivity(draft: ActivityDraft): ActivityCheck {
   let budget: Cents = 0;
   if (draft.budget.trim()) {
     try {
-      budget = parseCents(draft.budget);
+      budget = parseMoneyText(draft.budget);
       if (budget < 0) errors.budget = 'Enter an amount like 40 or 12.50.';
     } catch {
       errors.budget = 'Enter an amount like 40 or 12.50.';

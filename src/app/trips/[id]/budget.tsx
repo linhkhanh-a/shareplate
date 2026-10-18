@@ -23,7 +23,7 @@ import {
   useTrip,
   type Member,
 } from '@/lib/queries';
-import { formatCents, parseCents } from '@/money';
+import { centsToText, formatCents, parseMoneyText } from '@/money';
 
 export default function BudgetScreen() {
   const { id: tripId } = useLocalSearchParams<{ id: string }>();
@@ -366,14 +366,14 @@ function AmountForm({
   onSave: (cents: number) => Promise<void>;
   onCancel: () => void;
 }) {
-  const [text, setText] = useState(initial > 0 ? formatCents(initial).replace(/[$,]/g, '') : '');
+  const [text, setText] = useState(initial > 0 ? centsToText(initial) : '');
   const [problem, setProblem] = useState<string | null>(null);
 
   async function save() {
     let cents = 0;
     if (text.trim()) {
       try {
-        cents = parseCents(text);
+        cents = parseMoneyText(text);
       } catch {
         cents = -1;
       }

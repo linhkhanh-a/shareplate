@@ -1,21 +1,27 @@
 import { Image } from 'expo-image';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, usePreventRemove } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { BillEndActions, returnToTrip } from '@/components/bill-end-actions';
+import { DateField } from '@/components/date-field';
 import { FormerOnBillNotice } from '@/components/former-on-bill';
 import { PlanPicker } from '@/components/plan-picker';
 import { TopBar } from '@/components/top-bar';
-import { Avatar, Button, Chip, ChipGroup, Loading, Notice, Screen, Section, TextField } from '@/components/ui';
+import { Avatar, Button, Chip, ChipGroup, Loading, Notice, Screen, Section, Segmented, TextField } from '@/components/ui';
 import { Fonts, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { friendlyError } from '@/lib/errors';
-import { CATEGORIES, friendlyDate, isValidIsoDate, todayIso } from '@/lib/ledger';
+import { confirmAction } from '@/lib/platform';
+import { dateChoices } from '@/lib/dates';
+import { clearDraft, draftKey, loadDraft, storeDraft, type SavedDraft } from '@/lib/drafts';
+import { CATEGORIES, formatPercent, isValidIsoDate, todayIso } from '@/lib/ledger';
 import { useTripLive } from '@/lib/live';
 import { pickReceiptPhoto } from '@/lib/photo';
 import { formerOnBill } from '@/lib/people';
+import { timeAgo } from '@/lib/activity';
 import { describeEditors } from '@/lib/presence';
 import {
   activeMembers,
@@ -27,6 +33,7 @@ import {
   useReceiptUrl,
   usePinBill,
   useSaveItemizedBill,
+  useTrip,
   type Bill,
   type Member,
 } from '@/lib/queries';
@@ -40,24 +47,43 @@ import {
   moveItemToDiscount,
   newItemKey,
   type DraftItem,
+  type ExtraMode,
   type ReceiptDraft,
 } from '@/lib/receipt';
-import { formatCents } from '@/money';
+import { centsToText, currencySymbol, formatCents, normalizeMoneyText, normalizePercentText, parseMoneyText } from '@/money';
 
 type Step = 'photo' | 'items' | 'totals' | 'people';
-const STEPS: { step: Step; label: string }[] = [
-  { step: 'items', label: 'Check the items' },
-  { step: 'totals', label: 'Check the totals' },
-  { step: 'people', label: 'Who had what' },
+const STEPS: { step: Step; label: string; tab: string }[] = [
+  { step: 'items', label: 'Check the items', tab: 'Items' },
+  { step: 'totals', label: 'Check the totals', tab: 'Totals' },
+  { step: 'people', label: 'Who had what', tab: 'People' },
 ];
 
-function returnToTrip(tripId: string) {
-  if (router.canGoBack()) router.back();
-  else router.replace({ pathname: '/trips/[id]', params: { id: tripId } });
+/** What's kept on the device while a bill is being entered. */
+interface KeptDraft {
+  draft: ReceiptDraft;
+  step: Step;
+  activityId: string | null;
+  /** The saved bill's version it started from, so an outdated draft isn't offered. */
+  version: number | null;
 }
 
+/** The draft without its random item keys, to tell whether anything was changed. */
+const signature = (d: ReceiptDraft) => JSON.stringify({ ...d, items: d.items.map(({ key: _key, ...rest }) => rest) });
+
+/** A typed price, or 0 while it can't be read yet. */
+const priceOf = (text: string) => {
+  try {
+    const cents = parseMoneyText(text || '0');
+    return cents > 0 ? cents : 0;
+  } catch {
+    return 0;
+  }
+};
+
 export default function ScanScreen() {
-  const { id: tripId, billId, pin } = useLocalSearchParams<{ id: string; billId?: string; pin?: string }>();
+  const { id: tripId, billId, pin, manual } = useLocalSearchParams<{ id: string; billId?: string; pin?: string; manual?: string }>();
+  const trip = useTrip(tripId);
   const uid = useAuth().session?.user.id;
   const members = useMembers(tripId);
   const bills = useBills(tripId);
@@ -95,6 +121,8 @@ export default function ScanScreen() {
       initial={initial}
       onReload={() => setReloads((n) => n + 1)}
       pinTo={pin}
+      manual={manual === '1'}
+      tripDates={{ start: trip.data?.start_date ?? null, end: trip.data?.end_date ?? null }}
     />
   );
 }
@@ -107,6 +135,8 @@ function ScanWizard({
   initial,
   onReload,
   pinTo,
+  manual,
+  tripDates,
 }: {
   tripId: string;
   members: Member[];
@@ -116,12 +146,15 @@ function ScanWizard({
   onReload: () => void;
   /** Pins a new bill to this plan activity (when scanned from the activity). */
   pinTo?: string;
+  /** Typing the items by hand, no photo. */
+  manual: boolean;
+  tripDates: { start: string | null; end: string | null };
 }) {
   const save = useSaveItemizedBill(tripId);
   const pin = usePinBill(tripId);
   const [activityId, setActivityId] = useState<string | null>(existing ? existing.itinerary_item_id : (pinTo ?? null));
   const { setEditing, editorsOf } = useTripLive();
-  const [step, setStep] = useState<Step>(existing ? 'items' : 'photo');
+  const [step, setStep] = useState<Step>(existing || manual ? 'items' : 'photo');
   const [draft, setDraft] = useState<ReceiptDraft>(initial);
   const [localPhoto, setLocalPhoto] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -129,6 +162,54 @@ function ScanWizard({
   const [openedVersion] = useState(existing?.version);
   const remotePhoto = useReceiptUrl(localPhoto ? null : draft.imagePath);
   const photoUri = localPhoto ?? remotePhoto.data ?? null;
+  const [photoSize, setPhotoSize] = useState<PhotoSize>('small');
+
+  // Keep the draft on this device until it's saved, and offer it back next time.
+  const keepKey = draftKey(tripId, existing?.id);
+  const [kept, setKept] = useState<SavedDraft<KeptDraft> | null>(null);
+  const [keptChecked, setKeptChecked] = useState(false);
+  const dirty = signature(draft) !== signature(initial);
+  useEffect(() => {
+    let live = true;
+    loadDraft<KeptDraft>(keepKey).then((saved) => {
+      if (!live) return;
+      const current = saved && (saved.value.version ?? null) === (existing?.version ?? null);
+      if (saved && current && signature(saved.value.draft) !== signature(initial)) setKept(saved);
+      else if (saved && !current) clearDraft(keepKey);
+      setKeptChecked(true);
+    });
+    return () => {
+      live = false;
+    };
+    // Only when the screen opens: `initial` is fixed for this form.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keepKey]);
+  useEffect(() => {
+    // Wait until any kept draft has been offered, so it isn't overwritten first.
+    if (!keptChecked || kept) return;
+    if (dirty) storeDraft<KeptDraft>(keepKey, { draft, step, activityId, version: openedVersion ?? null });
+    else clearDraft(keepKey);
+  }, [draft, step, activityId, dirty, keepKey, keptChecked, kept, openedVersion]);
+
+  // Ask before leaving with unsaved changes (the draft is kept either way).
+  const [left, setLeft] = useState(false);
+  const allowLeave = usePreventRemove(dirty && keptChecked && !kept && !left, ({ repeat }) => {
+    confirmAction(
+      'Leave this bill?',
+      "It isn't saved yet. What you typed stays on this device, and you can continue it next time.",
+      'Leave',
+    ).then((ok) => {
+      if (!ok) return;
+      setLeft(true);
+      repeat();
+    });
+  });
+  /** Saved, deleted or discarded: leave without asking, and forget the kept draft. */
+  function leaving() {
+    setLeft(true);
+    allowLeave();
+    clearDraft(keepKey);
+  }
 
   const existingId = existing?.id;
   useEffect(() => {
@@ -192,6 +273,7 @@ function ScanWizard({
       return;
     }
     try {
+      leaving();
       if (activityId !== (existing?.itinerary_item_id ?? null)) await pin.mutateAsync({ billId: savedId, activityId });
       returnToTrip(tripId);
     } catch {
@@ -238,7 +320,7 @@ function ScanWizard({
       <TopBar />
       <View style={{ gap: Spacing.one }}>
         <ThemedText type="title" accessibilityRole="header">
-          {existing ? 'Edit scanned bill' : 'Scan a receipt'}
+          {existing ? (existing.bill_image_path ? 'Edit scanned bill' : 'Edit bill') : manual ? 'Bill by item' : 'Scan a receipt'}
         </ThemedText>
         {stepIndex >= 0 ? (
           <ThemedText themeColor="textSecondary">
@@ -246,6 +328,65 @@ function ScanWizard({
           </ThemedText>
         ) : null}
       </View>
+
+      {!existing && step !== 'photo' && !draft.imagePath ? (
+        <Segmented
+          label="How to enter it"
+          options={[
+            { value: 'total', label: 'One total' },
+            { value: 'items', label: 'By item' },
+          ]}
+          value="items"
+          onChange={async (v) => {
+            if (v !== 'total') return;
+            if (dirty && !(await confirmAction('Switch to one total?', "The items you typed won't be kept.", 'Switch'))) return;
+            leaving();
+            router.replace({ pathname: '/trips/[id]/bill', params: pinTo ? { id: tripId, pin: pinTo } : { id: tripId } });
+          }}
+        />
+      ) : null}
+
+      {kept ? (
+        <Notice>
+          <ThemedText type="strong">Continue where you left off?</ThemedText>
+          <ThemedText type="small">
+            {`You have an unsaved ${kept.value.draft.title.trim() || kept.value.draft.vendor.trim() || 'bill'} from ${timeAgo(kept.savedAt)}.`}
+          </ThemedText>
+          <View style={styles.footerButtons}>
+            <Button
+              label="Continue it"
+              onPress={() => {
+                setDraft(kept.value.draft);
+                setStep(kept.value.step);
+                setActivityId(kept.value.activityId);
+                setKept(null);
+              }}
+              style={styles.grow}
+            />
+            <Button
+              label="Start over"
+              variant="secondary"
+              onPress={async () => {
+                if (await confirmAction('Start over?', 'The unsaved bill on this device will be thrown away.', 'Start over')) {
+                  clearDraft(keepKey);
+                  setKept(null);
+                }
+              }}
+              style={styles.grow}
+            />
+          </View>
+        </Notice>
+      ) : null}
+
+      {step !== 'photo' ? (
+        <View accessibilityRole="tablist" style={styles.tabs}>
+          {STEPS.map((s, i) => (
+            <Chip key={s.step} label={`${i + 1} ${s.tab}`} selected={step === s.step} onPress={() => setStep(s.step)} />
+          ))}
+        </View>
+      ) : null}
+
+      {step !== 'photo' && photoUri ? <ReceiptPhoto uri={photoUri} size={photoSize} onSize={setPhotoSize} /> : null}
 
       <FormerOnBillNotice
         tripId={tripId}
@@ -280,7 +421,6 @@ function ScanWizard({
 
       {step === 'items' ? (
         <>
-          {photoUri ? <ReceiptPhoto uri={photoUri} /> : null}
           {scanProblem ? <Notice tone="error">{scanProblem}</Notice> : null}
           {draft.warnings.length > 0 ? (
             <Notice>
@@ -307,13 +447,31 @@ function ScanWizard({
 
       {step === 'totals' ? (
         <>
-          <TotalsStep draft={draft} check={check} update={update} people={people} nameOf={nameOf} scanned={!!draft.imagePath} />
+          <TotalsStep
+            draft={draft}
+            check={check}
+            update={update}
+            people={people}
+            nameOf={nameOf}
+            scanned={!!draft.imagePath}
+            dateOptions={dateChoices(tripDates.start, tripDates.end)}
+          />
           <PlanPicker tripId={tripId} billDate={draft.date} value={activityId} onChange={setActivityId} />
         </>
       ) : null}
 
       {step === 'people' ? (
         <PeopleStep draft={draft} check={check} people={people} nameOf={nameOf} updateItem={updateItem} />
+      ) : null}
+
+      {step !== 'photo' ? (
+        <BillEndActions
+          tripId={tripId}
+          existing={existing}
+          former={existing ? formerOnBill(members, existing) : []}
+          dirty={dirty}
+          beforeLeave={leaving}
+        />
       ) : null}
     </Screen>
   );
@@ -358,21 +516,29 @@ function PhotoStep({
   );
 }
 
-function ReceiptPhoto({ uri }: { uri: string }) {
+type PhotoSize = 'hidden' | 'small' | 'large';
+
+/** The receipt photo, on every step so the numbers can be compared as you go. */
+function ReceiptPhoto({ uri, size, onSize }: { uri: string; size: PhotoSize; onSize: (s: PhotoSize) => void }) {
   const theme = useTheme();
-  const [expanded, setExpanded] = useState(false);
+  if (size === 'hidden') {
+    return <Button variant="quiet" label="Show the receipt photo" onPress={() => onSize('small')} />;
+  }
   return (
     <View style={{ gap: Spacing.one }}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={expanded ? 'Shrink the receipt photo' : 'Enlarge the receipt photo'}
-        onPress={() => setExpanded((v) => !v)}
-        style={[styles.photoFrame, { height: expanded ? 640 : 260, borderColor: theme.border, backgroundColor: theme.surfaceMuted }]}>
+        accessibilityLabel={size === 'large' ? 'Shrink the receipt photo' : 'Enlarge the receipt photo'}
+        onPress={() => onSize(size === 'large' ? 'small' : 'large')}
+        style={[styles.photoFrame, { height: size === 'large' ? 640 : 220, borderColor: theme.border, backgroundColor: theme.surfaceMuted }]}>
         <Image source={{ uri }} style={StyleSheet.absoluteFill} contentFit="contain" accessibilityLabel="Receipt photo" />
       </Pressable>
-      <ThemedText type="small" themeColor="textSecondary" style={styles.center}>
-        {expanded ? 'Tap the photo to make it smaller' : 'Tap the photo to make it bigger'}
-      </ThemedText>
+      <View style={styles.photoBar}>
+        <ThemedText type="small" themeColor="textSecondary" style={styles.grow}>
+          {size === 'large' ? 'Tap the photo to make it smaller' : 'Tap the photo to make it bigger'}
+        </ThemedText>
+        <Button variant="quiet" label="Hide photo" onPress={() => onSize('hidden')} />
+      </View>
     </View>
   );
 }
@@ -382,26 +548,36 @@ function MoneyInput({
   onChange,
   label,
   invalid,
+  mode = 'amount',
 }: {
   value: string;
   onChange: (v: string) => void;
   label: string;
   invalid?: boolean;
+  /** An amount ("12.50") or a percentage ("10"). */
+  mode?: ExtraMode;
 }) {
   const theme = useTheme();
+  const percent = mode === 'percent';
   return (
     <View style={[styles.money, { borderColor: invalid ? theme.danger : theme.border, backgroundColor: theme.surface }]}>
-      <ThemedText themeColor="textSecondary">$</ThemedText>
+      {percent ? null : <ThemedText themeColor="textSecondary">{currencySymbol().trim()}</ThemedText>}
       <TextInput
-        accessibilityLabel={label}
+        accessibilityLabel={percent ? `${label} percent` : label}
         value={value}
-        onChangeText={(t) => onChange(t.replace(/[^0-9.,]/g, ''))}
-        placeholder="0.00"
+        onChangeText={(t) => onChange(t.replace(/[^0-9.,%]/g, ''))}
+        // Round to the cent (or hundredth of a percent) as soon as you leave the box.
+        onBlur={() => {
+          const normal = percent ? normalizePercentText(value) : normalizeMoneyText(value);
+          if (normal !== null && normal !== value) onChange(normal);
+        }}
+        placeholder={percent ? '0' : '0.00'}
         placeholderTextColor={theme.textSecondary}
         keyboardType="decimal-pad"
         inputMode="decimal"
         style={[styles.moneyText, { color: theme.text }]}
       />
+      {percent ? <ThemedText themeColor="textSecondary">%</ThemedText> : null}
     </View>
   );
 }
@@ -444,7 +620,18 @@ function ItemsStep({
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`Remove ${item.name || `item ${index + 1}`}`}
-                onPress={() => update({ items: draft.items.filter((i) => i.key !== item.key) })}
+                onPress={async () => {
+                  // Empty rows go right away; rows with something typed ask first.
+                  if (item.name.trim() || item.price.trim()) {
+                    const ok = await confirmAction(
+                      `Remove ${item.name.trim() || `item ${index + 1}`}?`,
+                      'It comes off this bill. You can type it in again if you need it.',
+                      'Remove item',
+                    );
+                    if (!ok) return;
+                  }
+                  update({ items: draft.items.filter((i) => i.key !== item.key) });
+                }}
                 hitSlop={6}
                 style={styles.remove}>
                 <ThemedText themeColor="textSecondary" style={styles.removeText}>
@@ -481,10 +668,7 @@ function ItemsStep({
 }
 
 function sumTyped(draft: ReceiptDraft) {
-  return draft.items.reduce((sum, i) => {
-    const n = Math.round(Number(i.price.replace(/,/g, '')) * 100);
-    return sum + (Number.isFinite(n) && n > 0 ? n : 0);
-  }, 0);
+  return draft.items.reduce((sum, i) => sum + priceOf(i.price), 0);
 }
 
 function TotalsStep({
@@ -494,6 +678,7 @@ function TotalsStep({
   people,
   nameOf,
   scanned,
+  dateOptions,
 }: {
   draft: ReceiptDraft;
   check: ReturnType<typeof checkDraft>;
@@ -501,38 +686,41 @@ function TotalsStep({
   people: Member[];
   nameOf: (id: string) => string;
   scanned: boolean;
+  dateOptions: ReturnType<typeof dateChoices>;
 }) {
   const theme = useTheme();
-  const [quickDates] = useState(() => [todayIso(), todayIso(new Date(Date.now() - 86_400_000))]);
   const t = check.totals;
   return (
     <>
       <View style={[styles.totals, { backgroundColor: theme.surface, borderColor: theme.border }]}>
         <TotalRow label="Items subtotal" value={formatCents(t?.subtotal ?? 0)} />
-        <View style={styles.totalField}>
-          <ThemedText style={styles.grow}>Discount or voucher</ThemedText>
-          <MoneyInput label="Discount" value={draft.discount} onChange={(discount) => update({ discount })} />
-        </View>
-        <View style={styles.totalField}>
-          <View style={styles.grow}>
-            <ThemedText>Tax</ThemedText>
-            {check.taxRate ? (
-              <ThemedText type="small" themeColor="textSecondary">
-                {check.taxRate} of the discounted subtotal
-              </ThemedText>
-            ) : null}
-          </View>
-          <MoneyInput label="Tax" value={draft.tax} onChange={(tax) => update({ tax })} />
-        </View>
-        <View style={styles.totalField}>
-          <View style={styles.grow}>
-            <ThemedText>Tip or service charge</ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
-              Split equally between everyone on the bill
-            </ThemedText>
-          </View>
-          <MoneyInput label="Tip" value={draft.tip} onChange={(tip) => update({ tip })} />
-        </View>
+        <ExtraRow
+          label="Discount or voucher"
+          hint="A % is of the items."
+          field="discount"
+          draft={draft}
+          update={update}
+          cents={t?.discount ?? null}
+          base={t?.subtotal ?? null}
+        />
+        <ExtraRow
+          label="Tax"
+          hint={check.taxRate && draft.taxMode === 'amount' ? `${check.taxRate} of the discounted subtotal` : 'A % is of the items after discount.'}
+          field="tax"
+          draft={draft}
+          update={update}
+          cents={t?.tax ?? null}
+          base={t ? t.subtotal - t.discount : null}
+        />
+        <ExtraRow
+          label="Tip or service charge"
+          hint="Split equally between everyone on the bill. A % is of the items after discount, before tax."
+          field="tip"
+          draft={draft}
+          update={update}
+          cents={t?.tip ?? null}
+          base={t ? t.subtotal - t.discount : null}
+        />
         <View style={[styles.rule, { borderColor: theme.border }]} />
         <View style={styles.totalField}>
           <ThemedText type="heading" style={styles.grow}>
@@ -557,7 +745,7 @@ function TotalsStep({
               variant="secondary"
               label="Tax is already included"
               accessibilityHint="Sets tax to zero so it isn't added on top of the prices"
-              onPress={() => update({ tax: '' })}
+              onPress={() => update({ tax: '', taxMode: 'amount' })}
             />
           ) : null}
         </Notice>
@@ -585,24 +773,76 @@ function TotalsStep({
           ))}
       </ChipGroup>
 
-      <View style={{ gap: Spacing.two }}>
-        <ChipGroup label="Date">
-          {quickDates.map((d) => (
-            <Chip key={d} label={friendlyDate(d)} selected={draft.date === d} onPress={() => update({ date: d })} />
-          ))}
-        </ChipGroup>
-        <TextField
-          label="Or type a date"
-          hint="Year-month-day, like 2026-10-17"
-          value={draft.date}
-          onChangeText={(date) => update({ date })}
-          error={!isValidIsoDate(draft.date) ? 'Use year-month-day, like 2026-10-17.' : null}
-          maxLength={10}
-          autoCapitalize="none"
-        />
-      </View>
+      <DateField label="Date" value={draft.date} onChange={(date) => update({ date })} choices={dateOptions} />
     </>
   );
+}
+
+/** Discount, tax or tip, typed as an amount or a percentage. */
+function ExtraRow({
+  label,
+  hint,
+  field,
+  draft,
+  update,
+  cents,
+  base,
+}: {
+  label: string;
+  hint: string;
+  field: 'discount' | 'tax' | 'tip';
+  draft: ReceiptDraft;
+  update: (changes: Partial<ReceiptDraft>) => void;
+  /** What it comes to, once it can be worked out. */
+  cents: number | null;
+  /** What a percentage is taken of. */
+  base: number | null;
+}) {
+  const modeKey = `${field}Mode` as const;
+  const mode = draft[modeKey];
+  return (
+    <View style={{ gap: Spacing.one }}>
+      <View style={styles.totalField}>
+        <View style={styles.grow}>
+          <ThemedText>{label}</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            {hint}
+          </ThemedText>
+        </View>
+        <MoneyInput label={label} value={draft[field]} onChange={(v) => update({ [field]: v })} mode={mode} />
+      </View>
+      <View style={styles.totalField}>
+        <View style={styles.modeSwitch}>
+          <Segmented
+            label={`${label} as an amount or a percentage`}
+            options={[
+              { value: 'amount', label: currencySymbol().trim() },
+              { value: 'percent', label: '%' },
+            ]}
+            value={mode}
+            onChange={(next: ExtraMode) => {
+              if (next === mode) return;
+              // Keep the same money when switching: 10% of $40 becomes $4.00, and back.
+              update({ [modeKey]: next, [field]: switchedText(draft[field], next, cents, base) });
+            }}
+          />
+        </View>
+        {mode === 'percent' && cents !== null ? (
+          <ThemedText type="small" themeColor="textSecondary" style={styles.grow}>
+            {`= ${formatCents(cents)}`}
+          </ThemedText>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+/** The text to show after switching between $ and %, so the amount stays the same where it can. */
+function switchedText(text: string, next: ExtraMode, cents: number | null, base: number | null): string {
+  if (!text.trim() || cents === null) return '';
+  if (next === 'amount') return cents ? centsToText(cents) : '';
+  if (!base || base <= 0) return '';
+  return formatPercent(Math.round((cents * 10_000) / base)).replace('%', '');
 }
 
 function TotalRow({ label, value }: { label: string; value: string }) {
@@ -643,7 +883,7 @@ function PeopleStep({
                 <ThemedText type="strong" style={styles.grow} numberOfLines={2}>
                   {item.name}
                 </ThemedText>
-                <ThemedText type="money">{formatCents(Math.round(Number(item.price.replace(/,/g, '')) * 100) || 0)}</ThemedText>
+                <ThemedText type="money">{formatCents(priceOf(item.price))}</ThemedText>
               </View>
               <View style={styles.chips} accessibilityLabel={`Who had ${item.name}`}>
                 <Chip
@@ -749,6 +989,9 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   remove: { width: 32, height: 44, alignItems: 'center', justifyContent: 'center' },
+  tabs: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
+  photoBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  modeSwitch: { width: 120 },
   discountHint: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   removeText: { fontSize: 24, lineHeight: 28 },
   totals: { borderWidth: 1, borderRadius: Radius.medium, padding: Spacing.three, gap: Spacing.three },

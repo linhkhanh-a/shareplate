@@ -24,7 +24,7 @@ describe('computeSplit (the bill editor preview)', () => {
 
   it('says how much percentage is left to assign', () => {
     const r = computeSplit('percent', '90', rows({ a: '50', b: '30' }));
-    expect(r).toMatchObject({ ok: false, message: '20% still to assign.', status: '80% of 100%' });
+    expect(r).toMatchObject({ ok: false, message: '20% left to assign.', status: '80% of 100%' });
   });
 
   it('accepts percentages with decimals and stores them as basis points', () => {
@@ -39,15 +39,48 @@ describe('computeSplit (the bill editor preview)', () => {
   it('says how far exact amounts are from the total', () => {
     expect(computeSplit('exact', '50', rows({ a: '20', b: '27.50' }))).toMatchObject({
       ok: false,
-      message: '$2.50 still to assign.',
+      message: '$2.50 left to assign.',
       status: '$47.50 of $50.00',
     });
     expect(computeSplit('exact', '50', rows({ a: '30', b: '25' }))).toMatchObject({
       ok: false,
-      message: '$5.00 too much.',
+      message: 'Over by $5.00.',
     });
     const ok = computeSplit('exact', '50', rows({ a: '30', b: '20' }));
     expect(ok.ok && ok.shares.map((s) => s.shareInput)).toEqual([3000, 2000]);
+  });
+
+  it('fills in whoever is left blank with the rest', () => {
+    // Total $60: An $25 and Minh $20, so Linh gets $15.00.
+    const exact = computeSplit('exact', '60', rows({ an: '25', minh: '20', linh: '' }));
+    expect(exact.ok && exact.shares.map((s) => s.amountCents)).toEqual([2500, 2000, 1500]);
+    expect(exact.auto).toEqual({ linh: '15.00' });
+    expect(exact.status).toBe('$45.00 typed, the rest filled in');
+
+    // An 40% and Minh 35%, so Linh gets 25%.
+    const pct = computeSplit('percent', '100', rows({ an: '40', minh: '35', linh: '' }));
+    expect(pct.ok && pct.shares.map((s) => s.shareInput)).toEqual([4000, 3500, 2500]);
+    expect(pct.auto).toEqual({ linh: '25' });
+  });
+
+  it('splits the rest equally among several blanks, to the exact cent', () => {
+    const r = computeSplit('exact', '10', rows({ a: '', b: '', c: '' }));
+    expect(r.ok && r.shares.map((s) => s.amountCents)).toEqual([334, 333, 333]);
+    const p = computeSplit('percent', '10', rows({ a: '50', b: '', c: '' }));
+    expect(p.ok && p.shares.map((s) => s.shareInput)).toEqual([5000, 2500, 2500]);
+    const thirds = computeSplit('percent', '10', rows({ a: '', b: '', c: '' }));
+    expect(thirds.ok && thirds.shares.map((s) => s.shareInput)).toEqual([3334, 3333, 3333]);
+  });
+
+  it('never fills in a negative amount', () => {
+    const r = computeSplit('exact', '60', rows({ a: '50', b: '20', c: '' }));
+    expect(r).toMatchObject({ ok: false, message: 'Over by $10.00.', auto: {} });
+    expect(computeSplit('percent', '60', rows({ a: '80', b: '30', c: '' }))).toMatchObject({ ok: false, message: 'Over by 10%.' });
+  });
+
+  it('accepts amounts with extra decimals or a comma, rounded to the cent', () => {
+    const r = computeSplit('exact', '10.005', rows({ a: '5,5', b: '' }));
+    expect(r.ok && r.shares.map((s) => s.amountCents)).toEqual([550, 451]);
   });
 
   it('asks for an amount and for people before anything else', () => {

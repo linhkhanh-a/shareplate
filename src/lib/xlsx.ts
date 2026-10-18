@@ -90,10 +90,11 @@ export function safeSheetNames(names: string[]): string[] {
   });
 }
 
-const STYLES =
+/** Money cells show the trip's currency sign, e.g. "CHF "#,##0.00. */
+const styles = (symbol: string) =>
   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
   '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-  '<numFmts count="2"><numFmt numFmtId="164" formatCode="&quot;$&quot;#,##0.00"/><numFmt numFmtId="165" formatCode="yyyy-mm-dd"/></numFmts>' +
+  `<numFmts count="2"><numFmt numFmtId="164" formatCode="&quot;${escapeXml(symbol.replace(/"/g, ''))}&quot;#,##0.00"/><numFmt numFmtId="165" formatCode="yyyy-mm-dd"/></numFmts>` +
   '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>' +
   '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
   '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
@@ -108,7 +109,7 @@ const STYLES =
   '</styleSheet>';
 
 /** Builds the .xlsx file's bytes. */
-export function buildXlsx(sheets: Sheet[]): Uint8Array {
+export function buildXlsx(sheets: Sheet[], currencySymbol = '$'): Uint8Array {
   const names = safeSheetNames(sheets.map((s) => s.name));
   const files: Record<string, Uint8Array> = {
     '[Content_Types].xml': strToU8(
@@ -150,7 +151,7 @@ export function buildXlsx(sheets: Sheet[]): Uint8Array {
         `<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>` +
         '</Relationships>',
     ),
-    'xl/styles.xml': strToU8(STYLES),
+    'xl/styles.xml': strToU8(styles(currencySymbol)),
   };
   sheets.forEach((s, i) => {
     files[`xl/worksheets/sheet${i + 1}.xml`] = strToU8(sheetXml(s));
