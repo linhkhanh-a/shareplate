@@ -244,7 +244,13 @@ function PaymentRow({
           </ThemedText>
         </View>
         <ThemedText type="money">{formatCents(payment.amount_cents)}</ThemedText>
-        <Button variant="quiet" label="Undo" onPress={onUndo} loading={undo.isPending} />
+        {payment.id.startsWith('pending-') ? (
+          <ThemedText type="small" themeColor="textSecondary">
+            Saving
+          </ThemedText>
+        ) : (
+          <Button variant="quiet" label="Undo" onPress={onUndo} loading={undo.isPending} />
+        )}
       </View>
       {undo.isError ? <Notice tone="error">{friendlyError(undo.error)}</Notice> : null}
     </View>

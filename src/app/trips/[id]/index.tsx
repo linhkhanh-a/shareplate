@@ -10,6 +10,8 @@ import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { friendlyError } from '@/lib/errors';
 import { friendlyDate, tripMoney } from '@/lib/ledger';
+import { useTripLive } from '@/lib/live';
+import { describeEditors } from '@/lib/presence';
 import { confirmAction, shareLink, siteUrl } from '@/lib/platform';
 import {
   activeMembers,
@@ -71,7 +73,7 @@ export default function TripScreen() {
 
   return (
     <Screen>
-      <TopBar />
+      <TopBar right={<LiveBadge />} />
       <View style={{ gap: Spacing.one }}>
         <ThemedText type="title" accessibilityRole="header">
           {trip.data.name}
@@ -125,6 +127,21 @@ export default function TripScreen() {
       {isAdmin ? <TripSettings trip={trip.data} /> : null}
       <LeaveTrip tripId={id} />
     </Screen>
+  );
+}
+
+/** A small dot while changes from other people arrive live. */
+function LiveBadge() {
+  const theme = useTheme();
+  const { connected } = useTripLive();
+  if (!connected) return null;
+  return (
+    <View style={styles.live} accessibilityLabel="Updating live">
+      <View style={[styles.liveDot, { backgroundColor: theme.primary }]} />
+      <ThemedText type="small" themeColor="textSecondary">
+        Live
+      </ThemedText>
+    </View>
   );
 }
 
@@ -188,6 +205,7 @@ function BillRow({
   myMemberId?: string;
 }) {
   const theme = useTheme();
+  const editors = useTripLive().editorsOf(bill.id);
   const myShare = bill.shares.find((s) => s.group_member_id === myMemberId)?.amount_cents;
   return (
     <Pressable
@@ -205,6 +223,11 @@ function BillRow({
         <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
           {payerName === 'You' ? 'You paid' : `${payerName} paid`}, {friendlyDate(bill.bill_date)}
         </ThemedText>
+        {editors.length > 0 ? (
+          <ThemedText type="small" style={{ color: theme.primary }} numberOfLines={1}>
+            {describeEditors(editors)} editing
+          </ThemedText>
+        ) : null}
       </View>
       <View style={styles.billAmounts}>
         <ThemedText type="money">{formatCents(bill.total_cents)}</ThemedText>
@@ -470,6 +493,8 @@ function LeaveTrip({ tripId }: { tripId: string }) {
 }
 
 const styles = StyleSheet.create({
+  live: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one, paddingHorizontal: Spacing.two },
+  liveDot: { width: 8, height: 8, borderRadius: 4 },
   grow: { flexGrow: 1, flexBasis: 0, minWidth: 0 },
   tabular: { fontVariant: ['tabular-nums'] },
   summary: { borderRadius: Radius.medium, padding: Spacing.four, gap: Spacing.one },

@@ -83,9 +83,7 @@ function RootNavigator() {
         <Stack.Protected guard={signedIn && onboarded} redirectTo={home}>
           <Stack.Screen name="index" />
           <Stack.Screen name="trips/new" />
-          <Stack.Screen name="trips/[id]/index" />
-          <Stack.Screen name="trips/[id]/bill" />
-          <Stack.Screen name="trips/[id]/settle" />
+          <Stack.Screen name="trips/[id]" />
           <Stack.Screen name="profile" />
         </Stack.Protected>
 

@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -31,7 +31,9 @@ import {
   type ManualMode,
   type SplitRow,
 } from '@/lib/ledger';
+import { useTripLive } from '@/lib/live';
 import { confirmAction } from '@/lib/platform';
+import { describeEditors } from '@/lib/presence';
 import { useBills, useDeleteBill, useMembers, useSaveBill, type Bill, type Member } from '@/lib/queries';
 import { formatCents } from '@/money';
 
@@ -54,6 +56,8 @@ export default function BillScreen() {
   const uid = useAuth().session?.user.id;
 
   const existing = billId ? bills.data?.find((b) => b.id === billId) : undefined;
+  // Bumped to reload the form with the latest saved version.
+  const [formKey, setFormKey] = useState(0);
 
   if (members.isPending || (billId && bills.isPending)) {
     return (
@@ -82,8 +86,8 @@ export default function BillScreen() {
 
   return (
     <BillForm
-      // Remount when the saved version changes so the form shows the latest copy.
-      key={existing ? `${existing.id}-${existing.version}` : 'new'}
+      key={`${existing?.id ?? 'new'}-${formKey}`}
+      onReload={() => setFormKey((k) => k + 1)}
       tripId={tripId}
       members={members.data ?? []}
       existing={existing}
@@ -97,13 +101,27 @@ function BillForm({
   members,
   existing,
   myMemberId,
+  onReload,
 }: {
   tripId: string;
   members: Member[];
   existing?: Bill;
   myMemberId?: string;
+  onReload: () => void;
 }) {
   const theme = useTheme();
+  const { setEditing, editorsOf } = useTripLive();
+  // The version this form started from. If someone saves a newer one meanwhile,
+  // saving refuses rather than overwriting their change.
+  const [openedVersion] = useState(existing?.version);
+  const newerVersionSaved = !!existing && openedVersion !== undefined && existing.version > openedVersion;
+  const existingId = existing?.id;
+  useEffect(() => {
+    if (!existingId) return;
+    setEditing(existingId);
+    return () => setEditing(null);
+  }, [existingId, setEditing]);
+  const otherEditors = existingId ? editorsOf(existingId) : [];
   const save = useSaveBill(tripId);
   const del = useDeleteBill(tripId);
   const editable = !existing || existing.split_mode !== 'itemized';
@@ -160,7 +178,7 @@ function BillForm({
     try {
       await save.mutateAsync({
         id: existing?.id,
-        expected_version: existing?.version,
+        expected_version: openedVersion,
         group_id: tripId,
         paid_by_member_id: payer,
         title: title.trim(),
@@ -212,6 +230,21 @@ function BillForm({
       </ThemedText>
 
       {!editable ? <Notice>Scanned bills will be editable from the receipt screen in a later update.</Notice> : null}
+
+      {newerVersionSaved ? (
+        <Notice tone="error">
+          <ThemedText type="strong">Someone just saved changes to this bill</ThemedText>
+          <ThemedText type="small">
+            Your edits are based on the older version, so saving them won&apos;t work. Load the latest version to
+            see their changes, then edit again.
+          </ThemedText>
+          <Button label="Load latest version" variant="secondary" onPress={onReload} />
+        </Notice>
+      ) : otherEditors.length > 0 ? (
+        <Notice>
+          {`${describeEditors(otherEditors)} also editing this bill. If they save first, you'll be asked to load their version.`}
+        </Notice>
+      ) : null}
 
       <TextField
         label="What was it for?"
