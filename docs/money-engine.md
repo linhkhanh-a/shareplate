@@ -83,7 +83,7 @@ For each person in a trip:
 Positive means the group owes them; negative means they owe. A trip's balances
 always add up to exactly $0.00.
 
-## 6. Settle Up ("Dồn tiền vào 1 người")
+## 6. Settle Up
 
 To turn balances into payments, the engine repeats one step: **the person who owes
 the most pays the person who is owed the most, as much as possible.** Each payment
