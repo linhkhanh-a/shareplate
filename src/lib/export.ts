@@ -18,6 +18,7 @@ const MODE_NAMES: Record<string, string> = {
   equal: 'Equally',
   percent: 'By percent',
   exact: 'Exact amounts',
+  shares: 'By shares',
   itemized: 'By item',
 };
 

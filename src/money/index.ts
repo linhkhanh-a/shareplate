@@ -29,12 +29,17 @@ export {
 } from './entry';
 export {
   FULL_PERCENT_BP,
+  ONE_SHARE,
   parsePercentToBasisPoints,
+  parseShares,
+  sharesText,
   splitByPercent,
+  splitByShares,
   splitEqual,
   splitExact,
   type MemberId,
   type PercentInput,
+  type SharesInput,
   type Share,
 } from './splits';
 export {

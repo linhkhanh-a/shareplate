@@ -27,7 +27,7 @@ export const TOUR: TourSlide[] = [
   {
     art: 'settle',
     title: 'Settle up with the fewest payments',
-    body: 'Settle up works out who pays whom with as few payments as possible, and shows where to send it. Tap Mark as paid once it’s sent.',
+    body: 'Settle up works out who pays whom with as few payments as possible. Tap Venmo, PayPal or Cash App to pay with the amount filled in, or copy their Zelle. Then tap Mark as paid.',
   },
   {
     art: 'plan',
@@ -69,7 +69,7 @@ export const GUIDES: Guide[] = [
     steps: [
       'Open the trip and go to the People tab.',
       'Copy the invite link and send it to your group chat. Friends sign in with Google and join.',
-      'For someone without an account, type their name under Add a guest. An admin can tap a guest to save their Zelle info.',
+      'For someone without an account, type their name under Add a guest. An admin can tap a guest to save their Zelle, Venmo, PayPal or Cash App.',
     ],
   },
   {
@@ -86,7 +86,8 @@ export const GUIDES: Guide[] = [
     title: 'Type a bill in',
     steps: [
       'Tap Add bill, then One total (just the amount) or By item (each dish).',
-      'One total: choose Equally, By percent or Exact amounts. Leave someone blank and they get what’s left, shown in grey as "auto".',
+      'One total: choose Equally, By percent, Exact amounts or By shares. Leave someone blank and they get what’s left, shown in grey as "auto".',
+      'By shares: give each person a number of shares, like 2 for a couple or 0.5 for a child. Blank means 1 share.',
       'By item: add each item and price. Discount, tax and tip can each be in $ or %.',
       'Amounts round to the cent when you leave the box, so what you see is what’s saved.',
     ],
@@ -105,8 +106,17 @@ export const GUIDES: Guide[] = [
     title: 'Settle up',
     steps: [
       'Tap Settle up on the trip page to see the fewest payments that clear everything.',
-      'Send the money however you like; Zelle info is shown when people added it.',
+      'If they added Venmo, PayPal or Cash App, tap it: the app opens with the amount filled in. Zelle info is shown to copy.',
       'Tap Mark as paid. If a payment was recorded by mistake, the payer, the receiver, whoever recorded it or an admin can remove it.',
+    ],
+  },
+  {
+    id: 'pay-apps',
+    title: 'Get paid by Venmo, PayPal or Cash App',
+    steps: [
+      'Open your profile, tap Add your Venmo, PayPal or Cash App, and type your username (or paste your profile link).',
+      'In Settle up, people who owe you see a button for each app. It opens the app with the amount and the trip name filled in.',
+      'Venmo and Cash App only send US dollars, so for trips in other currencies people type the amount in the app themselves.',
     ],
   },
   {
@@ -177,8 +187,8 @@ export const FAQ: Faq[] = [
     a: 'No. It only keeps track. You send money however you usually do (Zelle, cash, anything), then tap Mark as paid so everyone’s balance updates.',
   },
   {
-    q: 'Is Zelle connected to Shareplate?',
-    a: 'No. Zelle info is just shown so people know where to send money. Shareplate never sees your bank or Zelle account.',
+    q: 'Is Zelle, Venmo, PayPal or Cash App connected to Shareplate?',
+    a: 'No. Shareplate only shows where to send money and opens the app with the amount filled in. It never sees your bank or any of those accounts, and nothing is paid until you send it in the app.',
   },
   {
     q: 'Why do I owe (or am I owed) money after a bill was deleted?',
@@ -187,6 +197,10 @@ export const FAQ: Faq[] = [
   {
     q: 'How does rounding work?',
     a: 'Everything is counted in whole cents. When a bill doesn’t split evenly, the leftover cents go one at a time to the people closest to the next cent, so shares always add up exactly to the total and nobody is off by more than 1 cent.',
+  },
+  {
+    q: 'What’s By shares?',
+    a: 'A way to split a bill unevenly without doing the math: give each person a number of shares, like 2 for a couple, 1 each for everyone else and 0.5 for a child. The bill is split in proportion, to the cent. Anyone left blank has 1 share.',
   },
   {
     q: 'What does "auto" mean next to someone’s share?',
@@ -198,7 +212,7 @@ export const FAQ: Faq[] = [
   },
   {
     q: 'What’s a guest?',
-    a: 'Someone added by name who doesn’t sign in. Their share is tracked like everyone else’s; send them a personal message from Share and export. An admin can save a guest’s Zelle info.',
+    a: 'Someone added by name who doesn’t sign in. Their share is tracked like everyone else’s; send them a personal message from Share and export. An admin can save a guest’s Zelle, Venmo, PayPal or Cash App.',
   },
   {
     q: 'Why can’t I remove someone from the trip?',
@@ -279,8 +293,8 @@ export function tripChecklist(t: ChecklistInput): ChecklistItem[] {
     },
     {
       id: 'zelle',
-      title: 'Add your Zelle info',
-      detail: 'So people know where to send you money.',
+      title: 'Add how to pay you',
+      detail: 'Zelle, Venmo, PayPal or Cash App, so people know where to send money.',
       done: t.myZelle,
     },
     {

@@ -1,6 +1,7 @@
 import { tripMoney } from '@/lib/ledger';
-import type { Bill, Member, Payment } from '@/lib/queries';
-import { zelleOf } from '@/lib/people';
+import type { Bill, Member, PayFields, Payment } from '@/lib/queries';
+import { payNote, payOptions } from '@/lib/pay-apps';
+import { payHandlesOf, zelleOf } from '@/lib/people';
 import { formatCents, type Cents } from '@/money';
 
 export interface PersonTotals {
@@ -8,6 +9,8 @@ export interface PersonTotals {
   name: string;
   isGuest: boolean;
   zelle: string | null;
+  /** Their Venmo, PayPal and Cash App. */
+  pay: PayFields;
   /** Bills they paid for. */
   paid: Cents;
   /** Their share of all bills (what they used). */
@@ -27,10 +30,14 @@ export interface SummaryTransfer {
   amount: Cents;
   /** The recipient's Zelle email or phone, if they added one. */
   toZelle: string | null;
+  /** The recipient's Venmo, PayPal and Cash App. */
+  toPay: PayFields;
 }
 
 export interface TripSummary {
   tripName: string;
+  /** The trip's currency code, for payment links. */
+  currency: string;
   total: Cents;
   billCount: number;
   people: PersonTotals[];
@@ -43,6 +50,7 @@ export function tripSummary(input: {
   members: Member[];
   bills: Bill[];
   payments: Payment[];
+  currency?: string;
 }): TripSummary {
   const { tripName, members, bills, payments } = input;
   const active = members.filter((m) => !m.left_at);
@@ -67,6 +75,7 @@ export function tripSummary(input: {
       name: m.display_name,
       isGuest: !m.user_id,
       zelle: zelleOf(m),
+      pay: payHandlesOf(m),
       paid,
       share,
       sent,
@@ -77,6 +86,7 @@ export function tripSummary(input: {
 
   return {
     tripName,
+    currency: input.currency ?? 'USD',
     total: money.totalSpentCents,
     billCount: bills.length,
     people,
@@ -87,11 +97,15 @@ export function tripSummary(input: {
       toName: name(t.toId),
       amount: t.amountCents,
       toZelle: zelleOf(byId.get(t.toId)),
+      toPay: payHandlesOf(byId.get(t.toId)),
     })),
   };
 }
 
-const zelleNote = (t: SummaryTransfer) => (t.toZelle ? ` (Zelle: ${t.toZelle})` : '');
+const zelleNote = (t: SummaryTransfer) => {
+  const note = payNote(t.toZelle, t.toPay);
+  return note ? ` (${note})` : '';
+};
 
 /** The whole trip as a message for the group chat. */
 export function summaryText(s: TripSummary): string {
@@ -123,14 +137,23 @@ export function personMessage(s: TripSummary, personId: string, senderId?: strin
   const gets = s.transfers.filter((t) => t.toId === personId);
   const payLine = (t: SummaryTransfer) => {
     const to = t.toId === senderId ? 'me' : t.toName;
-    return `${formatCents(t.amount)} to ${to}${t.toZelle ? ` by Zelle at ${t.toZelle}` : ''}`;
+    const apps = payNote(null, t.toPay);
+    const how = apps ? zelleNote(t) : t.toZelle ? ` by Zelle at ${t.toZelle}` : '';
+    return `${formatCents(t.amount)} to ${to}${how}`;
   };
+  // One-tap links, with the amount filled in where the app allows it.
+  const links = pays.flatMap((t) =>
+    payOptions(t.toPay, t.amount, s.currency, `${s.tripName} (Shareplate)`).map(
+      (o) => `• ${o.name}${pays.length > 1 ? ` to ${t.toId === senderId ? 'me' : t.toName}` : ''}: ${o.url}`,
+    ),
+  );
   if (pays.length > 0) {
     lines.push(
       pays.length === 1
         ? `Please send ${payLine(pays[0])}.`
         : `Please send:\n${pays.map((t) => `• ${payLine(t)}`).join('\n')}`,
     );
+    if (links.length > 0) lines.push(`Pay in one tap:\n${links.join('\n')}`);
   } else if (gets.length > 0) {
     lines.push(
       `You're owed ${formatCents(gets.reduce((sum, t) => sum + t.amount, 0))}: ${gets
