@@ -92,6 +92,15 @@ export const GUIDES: Guide[] = [
     ],
   },
   {
+    id: 'currency',
+    title: 'Add a bill paid in another currency',
+    steps: [
+      'On the bill, under Paid in, tap Other currency and pick it (for example JPY or CHF).',
+      'Type the amount as it was charged. The day’s exchange rate fills in by itself; change it if your card charged a different rate.',
+      'Everyone’s share is worked out in the trip’s currency. The bill list shows what was paid, like "Paid CHF 54.50".',
+    ],
+  },
+  {
     id: 'settle',
     title: 'Settle up',
     steps: [
@@ -208,8 +217,12 @@ export const FAQ: Faq[] = [
     a: 'Either works. Settling early is fine: bills added later just create new, smaller payments. After the trip’s last day, Settle up reminds everyone it’s time.',
   },
   {
-    q: 'Can I use a different currency?',
-    a: 'Yes, an admin can choose the trip’s currency in Settings (EUR, GBP, CHF and more). It only changes the sign; nothing is converted. Currencies without cents, like VND or JPY, aren’t supported yet.',
+    q: 'Can I add a bill paid in another currency?',
+    a: 'Yes. On any bill, tap Paid in, then Other currency, and type the amount as it was charged (yen, francs, dong…). Shareplate fills in the day’s exchange rate from the European Central Bank (or an open feed for currencies it doesn’t publish), and you can change it to what your card actually charged. Everyone’s share is converted to the trip’s currency; the bill still shows what was paid.',
+  },
+  {
+    q: 'Can the whole trip use a different currency?',
+    a: 'Yes, an admin can choose the trip’s currency in Settings (EUR, GBP, CHF and more). It only changes the sign of what’s already there; nothing is converted. Bills paid in other currencies are converted into it.',
   },
   {
     q: 'What if I leave a bill halfway?',
