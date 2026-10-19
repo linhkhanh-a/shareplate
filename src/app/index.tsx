@@ -11,6 +11,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/lib/auth';
 import { friendlyError } from '@/lib/errors';
 import { useFirstRunTour } from '@/lib/tour';
+import { useWhatsNew } from '@/lib/whats-new';
 import { useProfile, useTrips, useUnreadCounts, type TripSummary } from '@/lib/queries';
 
 export default function TripsScreen() {
@@ -25,7 +26,9 @@ export default function TripsScreen() {
     }, [refetchUnread]),
   );
   const name = profile.data?.full_name || profile.data?.email || '';
-  const tour = useFirstRunTour(useAuth().session?.user.id);
+  const uid = useAuth().session?.user.id;
+  const tour = useFirstRunTour(uid);
+  const whatsNew = useWhatsNew(uid);
 
   return (
     <Screen footer={<Button label="New trip" onPress={() => router.push('/trips/new')} />}>
@@ -60,6 +63,23 @@ export default function TripsScreen() {
       <View style={styles.list}>
         {trips.data?.map((t) => <TripRow key={t.trip.id} summary={t} unread={unread.data?.get(t.trip.id) ?? 0} />)}
       </View>
+
+      {whatsNew.unseen.length > 0 && !tour.show ? (
+        <Notice>
+          <ThemedText type="strong">{`New in Shareplate: ${whatsNew.unseen[0].title}`}</ThemedText>
+          <View style={styles.noticeButtons}>
+            <Button
+              variant="secondary"
+              label="See what’s new"
+              onPress={() => {
+                whatsNew.markSeen();
+                router.push('/whats-new');
+              }}
+            />
+            <Button variant="quiet" label="Dismiss" onPress={whatsNew.markSeen} />
+          </View>
+        </Notice>
+      ) : null}
 
       <InstallHint />
 
@@ -98,6 +118,7 @@ function TripRow({ summary, unread }: { summary: TripSummary; unread: number }) 
 
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  noticeButtons: { flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap', marginTop: Spacing.one },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   list: { gap: Spacing.two },
   row: {

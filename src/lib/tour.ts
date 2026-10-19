@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useState } from 'react';
 
+import { markWhatsNewSeen } from '@/lib/whats-new';
+
 /**
  * Remembers on this device whether someone has seen the tour, and which
  * trips' "Getting started" lists they've hidden. Best effort: if storage
@@ -42,6 +44,8 @@ export function useFirstRunTour(uid: string | undefined) {
     done: () => {
       setShow(false);
       if (uid) void write(tourKey(uid));
+      // The tour covers what's new, too.
+      void markWhatsNewSeen();
     },
   };
 }

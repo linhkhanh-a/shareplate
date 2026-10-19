@@ -1296,3 +1296,48 @@ describe('start over', () => {
     expect(news.rows.map((r) => r.kind)).toEqual(['money_cleared']);
   });
 });
+
+describe('feedback', () => {
+  const send = (userId: string, message: string, extra = '') =>
+    asUser(userId, (tx) =>
+      tx.query(`insert into feedback (kind, message, contact_ok, page, app_version${extra ? ', status' : ''}) values ('idea', $1, true, '/help', '2026-10-19'${extra ? `, '${extra}'` : ''})`, [
+        message,
+      ]),
+    );
+
+  it('lets anyone signed in send feedback, and only see their own', async () => {
+    await send(LINH, 'Add Venmo links please');
+    await send(AN, 'The tour is nice');
+    const mine = await asUser(AN, (tx) => tx.query<{ message: string }>(`select message from feedback`));
+    expect(mine.rows.map((r) => r.message)).toEqual(['The tour is nice']);
+    await expect(asAnon((tx) => tx.query(`insert into feedback (kind, message) values ('idea', 'hello')`))).rejects.toThrow(
+      /permission denied/,
+    );
+    await expect(send(AN, 'x')).rejects.toThrow(/feedback_message_check/);
+    // Nobody marks their own feedback done, or deletes it.
+    await expect(send(AN, 'Sneaky', 'done')).rejects.toThrow(/row-level security/);
+    await expect(asUser(AN, (tx) => tx.query(`delete from feedback`))).rejects.toThrow(/permission denied/);
+  });
+
+  it('shows admins everything, with an email only when it’s OK to contact', async () => {
+    await send(AN, 'Problem with the calendar');
+    await asUser(LINH, (tx) => tx.query(`insert into feedback (kind, message) values ('question', 'How do guests pay?')`));
+    expect((await asUser(LINH, (tx) => tx.query(`select * from feedback_inbox()`))).rows).toEqual([]);
+
+    await db.query(`insert into app_admins (user_id) values ($1)`, [LINH]);
+    const inbox = await asUser(LINH, (tx) =>
+      tx.query<{ message: string; contact_email: string | null }>(`select message, contact_email from feedback_inbox() order by message`),
+    );
+    expect(inbox.rows).toEqual([
+      { message: 'How do guests pay?', contact_email: null },
+      { message: 'Problem with the calendar', contact_email: 'an@example.com' },
+    ]);
+    const done = await asUser(LINH, async (tx) =>
+      (await tx.query(`update feedback set status = 'done' where message = 'Problem with the calendar' returning id`)).rows.length,
+    );
+    expect(done).toBe(1);
+    // An isn't an admin: can't change anyone's.
+    const notMine = await asUser(AN, async (tx) => (await tx.query(`update feedback set status = 'new' returning id`)).rows.length);
+    expect(notMine).toBe(0);
+  });
+});

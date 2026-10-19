@@ -512,3 +512,18 @@ away once someone pays, or when hidden. A Help page, reachable from the trips
 list, the profile and each trip's Settings tab, has the tour again, a
 step-by-step guide for every feature and common questions, searchable. All the
 words live in `src/lib/help.ts`, so the tour, guides and FAQ stay consistent.
+
+## 65. Picture tour, install instead of a download, What's new, and feedback
+
+The tour shows a small picture of each screen, drawn with the app's own
+colors so it follows light and dark mode and never goes stale like a
+screenshot would. There's no separate desktop download: the website installs
+as an app (Chrome and Edge on computers and Android, Safari's Add to Dock on
+Mac, Add to Home Screen on iPhone), opens in its own window and always loads
+the latest version, so there's nothing to update by hand. Release notes live
+in `src/lib/changelog.ts`; returning users get a one-time "New in Shareplate"
+note on their trips list and a What's new page, and new users get the tour
+instead. Feedback (idea, problem or question) is stored in a `feedback` table:
+people see only their own; owners listed in `app_admins` (added once in the
+Supabase SQL editor, never through the app) read everything in a Feedback
+inbox, with the sender's email only when they said it's OK to contact them.

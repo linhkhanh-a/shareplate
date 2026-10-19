@@ -3,7 +3,7 @@
  * offer an install prompt the app can show from a button; iPhone and iPad
  * Safari don't, so there the app explains the Share → Add to Home Screen steps.
  */
-export type InstallState = 'installed' | 'prompt' | 'ios' | 'none';
+export type InstallState = 'installed' | 'prompt' | 'ios' | 'mac-safari' | 'none';
 
 type InstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
 
@@ -32,7 +32,10 @@ export function installState(): InstallState {
   if (deferred) return 'prompt';
   const ua = navigator.userAgent;
   const iOS = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
-  return iOS ? 'ios' : 'none';
+  if (iOS) return 'ios';
+  // Safari on a Mac (17 and later) installs from its File menu instead of a prompt.
+  if (/Macintosh/.test(ua) && /Safari\//.test(ua) && !/Chrome|Chromium|Edg|Firefox/.test(ua)) return 'mac-safari';
+  return 'none';
 }
 
 /** Shows the browser's install prompt. Resolves to true if they installed. */

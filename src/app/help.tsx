@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { InstallApp } from '@/components/install-app';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { Tour } from '@/components/tour';
@@ -76,7 +77,21 @@ export default function HelpScreen() {
         <ThemedText themeColor="textSecondary">Nothing matches “{query.trim()}”. Try another word.</ThemedText>
       ) : null}
 
-      <Button variant="quiet" label="Privacy" onPress={() => router.push('/privacy')} />
+      <Section title="Feedback">
+        <ThemedText type="small" themeColor="textSecondary">
+          An idea, something not working, or a question that isn&apos;t answered here? Every message is read.
+        </ThemedText>
+        <Button label="Send feedback" variant="secondary" onPress={() => router.push({ pathname: '/feedback', params: { from: '/help' } })} />
+      </Section>
+
+      <Section title="Install the app">
+        <InstallApp />
+      </Section>
+
+      <View style={styles.links}>
+        <Button variant="quiet" label="What’s new" onPress={() => router.push('/whats-new')} />
+        <Button variant="quiet" label="Privacy" onPress={() => router.push('/privacy')} />
+      </View>
 
       <Tour visible={touring} onClose={() => setTouring(false)} />
     </Screen>
@@ -112,4 +127,5 @@ const styles = StyleSheet.create({
   foldBody: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.three, gap: Spacing.two },
   step: { flexDirection: 'row', gap: Spacing.two },
   stepNumber: { width: 20, paddingTop: 2 },
+  links: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: Spacing.two },
 });

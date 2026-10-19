@@ -1,5 +1,5 @@
 /** In the phone app there's nothing to install. The web version is in install.web.ts. */
-export type InstallState = 'installed' | 'prompt' | 'ios' | 'none';
+export type InstallState = 'installed' | 'prompt' | 'ios' | 'mac-safari' | 'none';
 
 export function installState(): InstallState {
   return 'installed';

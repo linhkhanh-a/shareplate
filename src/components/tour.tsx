@@ -5,6 +5,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { TourArt } from '@/components/tour-art';
 import { TOUR } from '@/lib/help';
 
 /** The short tour of Shareplate: one card at a time, with Back, Next and Skip. */
@@ -27,6 +28,7 @@ export function Tour({ visible, onClose }: { visible: boolean; onClose: () => vo
           aria-modal
           aria-label="Shareplate tour"
           style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <TourArt art={slide.art} />
           <ThemedText type="small" themeColor="textSecondary">
             {`${index + 1} of ${TOUR.length}`}
           </ThemedText>
@@ -70,7 +72,7 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 440,
-    minHeight: 300,
+    minHeight: 480,
     borderRadius: Radius.medium,
     borderWidth: 1,
     padding: Spacing.four,
