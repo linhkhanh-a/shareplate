@@ -543,3 +543,8 @@ proportion, and bills by item convert each price, discount, tax and tip and
 spread each one like before, so everything still adds up for the bill and for
 each person. The bill keeps the currency, rate, original total and what was
 typed (`entry`), so it shows "Paid CHF 54.50" and edits in francs.
+
+## 67. "By shares" split
+
+- **By shares** stores each person's shares in hundredths in `share_input` (1.5 shares = 150) and splits with the same largest-remainder `allocate`, so shares add up to the cent. Blank means 1 share. The database checks everyone on a shares bill has more than 0. Bills paid in another currency are re-split by the same shares on the converted total.
+- **No Venmo, PayPal or Cash App links.** Built and then dropped at review: Zelle info plus Mark as paid is enough, and it keeps Settle up simple.

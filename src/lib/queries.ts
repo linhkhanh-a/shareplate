@@ -530,7 +530,7 @@ export function useJoinTrip() {
 // Bills and payments
 // ---------------------------------------------------------------------------
 
-export type SplitMode = 'equal' | 'percent' | 'exact' | 'itemized';
+export type SplitMode = 'equal' | 'percent' | 'exact' | 'shares' | 'itemized';
 
 export interface BillShare {
   group_member_id: string;
@@ -592,7 +592,7 @@ export interface BillDraft {
   paid_by_member_id: string;
   title: string;
   category: string;
-  split_mode: 'equal' | 'percent' | 'exact';
+  split_mode: 'equal' | 'percent' | 'exact' | 'shares';
   total_cents: number;
   bill_date: string;
   participants: { member_id: string; share_input: number | null; amount_cents: number }[];

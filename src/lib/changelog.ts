@@ -13,6 +13,15 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: '2026-10-19c',
+    date: 'Oct 19, 2026',
+    title: 'Split by shares',
+    items: [
+      'A new By shares split: 2 shares for a couple, 0.5 for a child, and the bill is split in proportion, to the cent.',
+      'Leave someone blank and they have 1 share.',
+    ],
+  },
+  {
     id: '2026-10-19b',
     date: 'Oct 19, 2026',
     title: 'Bills in any currency',

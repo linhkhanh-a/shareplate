@@ -1306,7 +1306,7 @@ describe('feedback', () => {
     );
 
   it('lets anyone signed in send feedback, and only see their own', async () => {
-    await send(LINH, 'Add Venmo links please');
+    await send(LINH, 'Add a dark mode toggle please');
     await send(AN, 'The tour is nice');
     const mine = await asUser(AN, (tx) => tx.query<{ message: string }>(`select message from feedback`));
     expect(mine.rows.map((r) => r.message)).toEqual(['The tour is nice']);
@@ -1419,5 +1419,28 @@ describe('bills paid in another currency', () => {
     );
     expect(row.currency).toBe('JPY');
     expect(Number(row.total_cents)).toBe(1608);
+  });
+});
+
+describe('split by shares', () => {
+  it('saves a bill by shares, and needs everyone on it to have some', async () => {
+    const { groupId, linhId, anId, guestId } = await createTrip();
+    const bill = {
+      group_id: groupId,
+      paid_by_member_id: linhId,
+      title: 'Villa',
+      split_mode: 'shares',
+      total_cents: 10000,
+      participants: [
+        { member_id: linhId, share_input: 200, amount_cents: 5000 },
+        { member_id: anId, share_input: 100, amount_cents: 2500 },
+        { member_id: guestId, share_input: 100, amount_cents: 2500 },
+      ],
+    };
+    await asUser(LINH, (tx) => tx.query(`select save_bill($1::jsonb)`, [JSON.stringify(bill)]));
+    expect(await balances(LINH, groupId)).toMatchObject({ Linh: 5000, An: -2500 });
+
+    const zero = { ...bill, participants: [...bill.participants.slice(0, 2), { member_id: guestId, share_input: 0, amount_cents: 2500 }] };
+    await expect(asUser(LINH, (tx) => tx.query(`select save_bill($1::jsonb)`, [JSON.stringify(zero)]))).rejects.toThrow(/SHARES_MISSING/);
   });
 });

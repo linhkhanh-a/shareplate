@@ -86,7 +86,8 @@ export const GUIDES: Guide[] = [
     title: 'Type a bill in',
     steps: [
       'Tap Add bill, then One total (just the amount) or By item (each dish).',
-      'One total: choose Equally, By percent or Exact amounts. Leave someone blank and they get what’s left, shown in grey as "auto".',
+      'One total: choose Equally, By percent, Exact amounts or By shares. Leave someone blank and they get what’s left, shown in grey as "auto".',
+      'By shares: give each person a number of shares, like 2 for a couple or 0.5 for a child. Blank means 1 share.',
       'By item: add each item and price. Discount, tax and tip can each be in $ or %.',
       'Amounts round to the cent when you leave the box, so what you see is what’s saved.',
     ],
@@ -187,6 +188,10 @@ export const FAQ: Faq[] = [
   {
     q: 'How does rounding work?',
     a: 'Everything is counted in whole cents. When a bill doesn’t split evenly, the leftover cents go one at a time to the people closest to the next cent, so shares always add up exactly to the total and nobody is off by more than 1 cent.',
+  },
+  {
+    q: 'What’s By shares?',
+    a: 'A way to split a bill unevenly without doing the math: give each person a number of shares, like 2 for a couple, 1 each for everyone else and 0.5 for a child. The bill is split in proportion, to the cent. Anyone left blank has 1 share.',
   },
   {
     q: 'What does "auto" mean next to someone’s share?',

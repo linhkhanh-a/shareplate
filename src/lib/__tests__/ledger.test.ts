@@ -89,6 +89,42 @@ describe('computeSplit (the bill editor preview)', () => {
   });
 });
 
+describe('split by shares', () => {
+  it('splits in proportion, with blanks as 1 share', () => {
+    const r = computeSplit('shares', '100', rows({ couple: '2', a: '', kid: '0.5' }));
+    expect(r).toMatchObject({ ok: true, auto: { a: '1' } });
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.shares.map((s) => [s.amountCents, s.shareInput])).toEqual([
+      [5714, 200],
+      [2857, 100],
+      // The leftover cent goes to the biggest remainder (14.2857 -> 14.29).
+      [1429, 50],
+    ]);
+    expect(r.shares.reduce((t, s) => t + s.amountCents, 0)).toBe(10000);
+    expect(r.status).toBe('3.5 shares · about $28.57 a share');
+  });
+
+  it('asks for a number of shares, and more than 0', () => {
+    expect(computeSplit('shares', '10', rows({ a: 'x', b: '' }))).toMatchObject({ ok: false, message: /shares like 1, 2 or 0.5/ });
+    expect(computeSplit('shares', '10', rows({ a: '0', b: '' }))).toMatchObject({ ok: false, message: /needs some shares/ });
+  });
+
+  it('keeps the same shares when paid in another currency', async () => {
+    const { convertSplit } = await import('@/lib/ledger');
+    const r = computeSplit('shares', '30', rows({ a: '2', b: '1' }));
+    if (!r.ok) throw new Error('expected ok');
+    const c = convertSplit('shares', r.shares, 2);
+    expect(c.map((s) => [s.amountCents, s.shareInput])).toEqual([
+      [4000, 200],
+      [2000, 100],
+    ]);
+  });
+
+  it('turns stored shares back into editor text', () => {
+    expect(shareInputText('shares', 150)).toBe('1.5');
+  });
+});
+
 describe('formatting helpers', () => {
   it('formats percentages without trailing zeros', () => {
     expect(formatPercent(10000)).toBe('100%');
