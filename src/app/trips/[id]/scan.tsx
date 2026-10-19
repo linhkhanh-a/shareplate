@@ -1,11 +1,12 @@
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams, usePreventRemove } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { BillEndActions, returnToTrip } from '@/components/bill-end-actions';
 import { DateField } from '@/components/date-field';
+import { PaidIn } from '@/components/paid-in';
 import { FormerOnBillNotice } from '@/components/former-on-bill';
 import { PlanPicker } from '@/components/plan-picker';
 import { TopBar } from '@/components/top-bar';
@@ -46,15 +47,34 @@ import {
   emptyDraft,
   itemizedPayload,
   looksLikeDiscount,
+  foreignRate,
   moveItemToDiscount,
   newItemKey,
   type DraftItem,
   type ExtraMode,
   type ReceiptDraft,
 } from '@/lib/receipt';
-import { centsToText, currencySymbol, formatCents, normalizeMoneyText, normalizePercentText, parseMoneyText } from '@/money';
+import {
+  centsToText,
+  convertItemized,
+  currencySymbol,
+  formatCents,
+  formatIn,
+  normalizeAmountIn,
+  normalizePercentText,
+  paidCurrency,
+  parseMoneyText,
+} from '@/money';
 
 type Step = 'photo' | 'items' | 'totals' | 'people';
+
+/** The currency the bill is typed in: the trip's, or another one it was paid in. */
+const PaidContext = createContext<{ code: string | null; symbol: string; fmt: (cents: number) => string }>({
+  code: null,
+  symbol: '$',
+  fmt: formatCents,
+});
+const usePaid = () => useContext(PaidContext);
 const STEPS: { step: Step; label: string; tab: string }[] = [
   { step: 'items', label: 'Check the items', tab: 'Items' },
   { step: 'totals', label: 'Check the totals', tab: 'Totals' },
@@ -74,9 +94,9 @@ interface KeptDraft {
 const signature = (d: ReceiptDraft) => JSON.stringify({ ...d, items: d.items.map(({ key: _key, ...rest }) => rest) });
 
 /** A typed price, or 0 while it can't be read yet. */
-const priceOf = (text: string) => {
+const priceOf = (text: string, code: string | null = null) => {
   try {
-    const cents = parseMoneyText(text || '0');
+    const cents = parseMoneyText(normalizeAmountIn(text, code) || '0');
     return cents > 0 ? cents : 0;
   } catch {
     return 0;
@@ -125,6 +145,7 @@ export default function ScanScreen() {
       pinTo={pin}
       manual={manual === '1'}
       tripDates={{ start: trip.data?.start_date ?? null, end: trip.data?.end_date ?? null }}
+      tripCurrency={trip.data?.currency ?? 'USD'}
     />
   );
 }
@@ -139,6 +160,7 @@ function ScanWizard({
   pinTo,
   manual,
   tripDates,
+  tripCurrency,
 }: {
   tripId: string;
   members: Member[];
@@ -151,6 +173,7 @@ function ScanWizard({
   /** Typing the items by hand, no photo. */
   manual: boolean;
   tripDates: { start: string | null; end: string | null };
+  tripCurrency: string;
 }) {
   const save = useSaveItemizedBill(tripId);
   const impact = useBillImpact(tripId, myMemberId);
@@ -224,6 +247,26 @@ function ScanWizard({
   const newerVersionSaved = !!existing && openedVersion !== undefined && existing.version > openedVersion;
 
   const check = checkDraft(draft);
+  // Paid in another currency: typed in it, converted to the trip's when saved.
+  const fx = foreignRate(draft);
+  const paid = {
+    code: draft.paidIn,
+    symbol: (draft.paidIn ? (paidCurrency(draft.paidIn)?.symbol ?? draft.paidIn) : currencySymbol()).trim(),
+    fmt: (cents: number) => (draft.paidIn ? formatIn(cents, draft.paidIn) : formatCents(cents)),
+  };
+  const converted =
+    fx && check.result
+      ? convertItemized(
+          {
+            itemPrices: draft.items.map((i) => priceOf(i.price, draft.paidIn)),
+            discountCents: check.result.members.reduce((s, m) => s + m.discountCents, 0),
+            taxCents: check.result.members.reduce((s, m) => s + m.taxCents, 0),
+            tipCents: check.result.members.reduce((s, m) => s + m.tipCents, 0),
+            members: check.result.members,
+          },
+          fx.rate,
+        )
+      : null;
   const people = members.filter((m) => !m.left_at || draft.items.some((i) => i.memberIds.includes(m.id)));
   const nameOf = (id: string) => (id === myMemberId ? 'You' : (members.find((m) => m.id === id)?.display_name ?? 'Someone'));
   const update = (changes: Partial<ReceiptDraft>) => setDraft((d) => ({ ...d, ...changes }));
@@ -266,11 +309,19 @@ function ScanWizard({
 
   async function onSave() {
     if (!check.result) return;
+    if (draft.paidIn && !fx) {
+      setTried('people');
+      return;
+    }
     // Once people have paid, an edit can mean money going back: say so first.
     if (existing && impact.hasPayments) {
       const preview = impact.describe(
         existing.id,
-        withShares(existing, draft.payerId, check.result.members.map((m) => ({ memberId: m.memberId, amountCents: m.totalCents }))),
+        withShares(
+          existing,
+          draft.payerId,
+          (converted?.members ?? check.result.members).map((m) => ({ memberId: m.memberId, amountCents: m.totalCents })),
+        ),
       );
       if (preview && preview.changes > 0 && !(await confirmAction('Save these changes?', preview.text, 'Save changes'))) return;
     }
@@ -346,6 +397,9 @@ function ScanWizard({
             </ThemedText>
           </Notice>
         ) : null}
+        {step === 'people' && tried === 'people' && draft.paidIn && !fx ? (
+          <Notice tone="error">{`Enter the exchange rate for ${draft.paidIn} on the Items step.`}</Notice>
+        ) : null}
         {step === 'people' && save.isError ? <Notice tone="error">{friendlyError(save.error)}</Notice> : null}
         {step === 'people' && pin.isError ? (
           <Notice tone="error">{`The bill is saved, but pinning it to the plan didn't work. ${friendlyError(pin.error)}`}</Notice>
@@ -372,6 +426,7 @@ function ScanWizard({
     );
 
   return (
+    <PaidContext.Provider value={paid}>
     <Screen footer={footer}>
       <TopBar />
       <View style={{ gap: Spacing.one }}>
@@ -485,6 +540,13 @@ function ScanWizard({
               ))}
             </Notice>
           ) : null}
+          <PaidIn
+            tripCurrency={tripCurrency}
+            paidIn={draft.paidIn}
+            rate={draft.rate}
+            date={draft.date}
+            onChange={(next) => update({ paidIn: next.paidIn, rate: next.rate })}
+          />
           <ItemsStep draft={draft} check={check} updateItem={updateItem} update={update} showAllErrors={tried === 'items'} />
           {check.mismatches.length > 0 ? (
             <Notice>
@@ -514,7 +576,15 @@ function ScanWizard({
       ) : null}
 
       {step === 'people' ? (
-        <PeopleStep draft={draft} check={check} people={people} nameOf={nameOf} updateItem={updateItem} />
+        <PeopleStep
+          draft={draft}
+          check={check}
+          people={people}
+          nameOf={nameOf}
+          updateItem={updateItem}
+          converted={converted}
+          tripCurrency={tripCurrency}
+        />
       ) : null}
 
       {step !== 'photo' ? (
@@ -528,6 +598,7 @@ function ScanWizard({
         />
       ) : null}
     </Screen>
+    </PaidContext.Provider>
   );
 }
 
@@ -685,17 +756,18 @@ function MoneyInput({
   mode?: ExtraMode;
 }) {
   const theme = useTheme();
+  const paid = usePaid();
   const percent = mode === 'percent';
   return (
     <View style={[styles.money, { borderColor: invalid ? theme.danger : theme.border, backgroundColor: theme.surface }]}>
-      {percent ? null : <ThemedText themeColor="textSecondary">{currencySymbol().trim()}</ThemedText>}
+      {percent ? null : <ThemedText themeColor="textSecondary">{paid.symbol}</ThemedText>}
       <TextInput
         accessibilityLabel={percent ? `${label} percent` : label}
         value={value}
         onChangeText={(t) => onChange(t.replace(/[^0-9.,%]/g, ''))}
         // Round to the cent (or hundredth of a percent) as soon as you leave the box.
         onBlur={() => {
-          const normal = percent ? normalizePercentText(value) : normalizeMoneyText(value);
+          const normal = percent ? normalizePercentText(value) : normalizeAmountIn(value, paid.code);
           if (normal !== null && normal !== value) onChange(normal);
         }}
         placeholder={percent ? '0' : '0.00'}
@@ -724,6 +796,7 @@ function ItemsStep({
   showAllErrors: boolean;
 }) {
   const theme = useTheme();
+  const paid = usePaid();
   return (
     <Section title="Items">
       <View style={styles.list}>
@@ -800,14 +873,14 @@ function ItemsStep({
         onPress={() => update({ items: [...draft.items, { key: newItemKey(), name: '', price: '', memberIds: [] }] })}
       />
       <ThemedText type="small" themeColor="textSecondary">
-        Items subtotal {formatCents(check.totals?.subtotal ?? sumTyped(draft))}
+        Items subtotal {paid.fmt(check.totals?.subtotal ?? sumTyped(draft))}
       </ThemedText>
     </Section>
   );
 }
 
 function sumTyped(draft: ReceiptDraft) {
-  return draft.items.reduce((sum, i) => sum + priceOf(i.price), 0);
+  return draft.items.reduce((sum, i) => sum + priceOf(i.price, draft.paidIn), 0);
 }
 
 function TotalsStep({
@@ -828,11 +901,12 @@ function TotalsStep({
   dateOptions: ReturnType<typeof dateChoices>;
 }) {
   const theme = useTheme();
+  const paid = usePaid();
   const t = check.totals;
   return (
     <>
       <View style={[styles.totals, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-        <TotalRow label="Items subtotal" value={formatCents(t?.subtotal ?? 0)} />
+        <TotalRow label="Items subtotal" value={paid.fmt(t?.subtotal ?? 0)} />
         <ExtraRow
           label="Discount or voucher"
           hint="A % is of the items."
@@ -866,7 +940,7 @@ function TotalsStep({
             Total
           </ThemedText>
           <ThemedText type="money" style={styles.bigMoney}>
-            {formatCents(t?.total ?? 0)}
+            {paid.fmt(t?.total ?? 0)}
           </ThemedText>
         </View>
       </View>
@@ -937,6 +1011,7 @@ function ExtraRow({
   /** What a percentage is taken of. */
   base: number | null;
 }) {
+  const paid = usePaid();
   const modeKey = `${field}Mode` as const;
   const mode = draft[modeKey];
   return (
@@ -955,7 +1030,7 @@ function ExtraRow({
           <Segmented
             label={`${label} as an amount or a percentage`}
             options={[
-              { value: 'amount', label: currencySymbol().trim() },
+              { value: 'amount', label: paid.symbol },
               { value: 'percent', label: '%' },
             ]}
             value={mode}
@@ -968,7 +1043,7 @@ function ExtraRow({
         </View>
         {mode === 'percent' && cents !== null ? (
           <ThemedText type="small" themeColor="textSecondary" style={styles.grow}>
-            {`= ${formatCents(cents)}`}
+            {`= ${paid.fmt(cents)}`}
           </ThemedText>
         ) : null}
       </View>
@@ -999,14 +1074,20 @@ function PeopleStep({
   people,
   nameOf,
   updateItem,
+  converted,
+  tripCurrency,
 }: {
   draft: ReceiptDraft;
   check: ReturnType<typeof checkDraft>;
   people: Member[];
   nameOf: (id: string) => string;
   updateItem: (key: string, changes: Partial<DraftItem>) => void;
+  /** Paid in another currency: what each person owes in the trip's. */
+  converted: ReturnType<typeof convertItemized> | null;
+  tripCurrency: string;
 }) {
   const theme = useTheme();
+  const paid = usePaid();
   const active = people.filter((m) => !m.left_at);
   return (
     <>
@@ -1022,7 +1103,7 @@ function PeopleStep({
                 <ThemedText type="strong" style={styles.grow} numberOfLines={2}>
                   {item.name}
                 </ThemedText>
-                <ThemedText type="money">{formatCents(priceOf(item.price))}</ThemedText>
+                <ThemedText type="money">{paid.fmt(priceOf(item.price, paid.code))}</ThemedText>
               </View>
               <View style={styles.chips} accessibilityLabel={`Who had ${item.name}`}>
                 <Chip
@@ -1067,21 +1148,34 @@ function PeopleStep({
                   <ThemedText numberOfLines={1}>{nameOf(m.memberId)}</ThemedText>
                   <ThemedText type="small" themeColor="textSecondary" style={styles.tabular}>
                     {[
-                      `Items ${formatCents(m.itemsCents)}`,
-                      m.discountCents ? `discount −${formatCents(m.discountCents)}` : null,
-                      m.taxCents ? `tax ${formatCents(m.taxCents)}` : null,
-                      m.tipCents ? `tip ${formatCents(m.tipCents)}` : null,
+                      `Items ${paid.fmt(m.itemsCents)}`,
+                      m.discountCents ? `discount −${paid.fmt(m.discountCents)}` : null,
+                      m.taxCents ? `tax ${paid.fmt(m.taxCents)}` : null,
+                      m.tipCents ? `tip ${paid.fmt(m.tipCents)}` : null,
                     ]
                       .filter(Boolean)
                       .join(', ')}
                   </ThemedText>
                 </View>
-                <ThemedText type="money">{formatCents(m.totalCents)}</ThemedText>
+                <View style={styles.pays}>
+                  <ThemedText type="money">
+                    {converted
+                      ? formatCents(converted.members.find((c) => c.memberId === m.memberId)?.totalCents ?? 0)
+                      : paid.fmt(m.totalCents)}
+                  </ThemedText>
+                  {converted ? (
+                    <ThemedText type="small" themeColor="textSecondary">
+                      {paid.fmt(m.totalCents)}
+                    </ThemedText>
+                  ) : null}
+                </View>
               </View>
             ))}
           </View>
           <ThemedText type="small" themeColor="textSecondary">
-            Total {formatCents(check.result.totalCents)}, paid by {nameOf(draft.payerId)}.
+            {converted
+              ? `Total ${paid.fmt(check.result.totalCents)} = ${formatCents(converted.totalCents)} in ${tripCurrency}, paid by ${nameOf(draft.payerId)}. Shares are in ${tripCurrency}.`
+              : `Total ${paid.fmt(check.result.totalCents)}, paid by ${nameOf(draft.payerId)}.`}
           </ThemedText>
         </Section>
       ) : null}
@@ -1136,6 +1230,7 @@ const styles = StyleSheet.create({
   stepDot: { width: 36, height: 36, borderRadius: 18, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   dimmed: { opacity: 0.55 },
   photoBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  pays: { alignItems: 'flex-end' },
   modeSwitch: { width: 120 },
   discountHint: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   removeText: { fontSize: 24, lineHeight: 28 },

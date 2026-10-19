@@ -161,3 +161,24 @@ describe('tripMoney', () => {
     expect(money.totalSpentCents).toBe(6900);
   });
 });
+
+describe('splits paid in another currency', () => {
+  it('keeps equal splits equal after converting, and shares adding up', async () => {
+    const { convertSplit } = await import('@/lib/ledger');
+    const typed = computeSplit('equal', '54.50', rows({ a: '', b: '', c: '' }));
+    const converted = convertSplit('equal', typed.ok ? typed.shares : [], 1.1235);
+    expect(converted.map((s) => s.amountCents)).toEqual([2041, 2041, 2041]);
+
+    const pct = computeSplit('percent', '54.50', rows({ a: '50', b: '' }));
+    const p = convertSplit('percent', pct.ok ? pct.shares : [], 1.1235);
+    expect(p).toEqual([
+      { memberId: 'a', amountCents: 3062, shareInput: 5000 },
+      { memberId: 'b', amountCents: 3061, shareInput: 5000 },
+    ]);
+
+    const exact = computeSplit('exact', '1200', rows({ a: '1000', b: '' }));
+    const e = convertSplit('exact', exact.ok ? exact.shares : [], 0.0067); // ¥1,200 -> $8.04
+    expect(e.reduce((s, x) => s + x.amountCents, 0)).toBe(804);
+    expect(e.every((x) => x.shareInput === x.amountCents)).toBe(true);
+  });
+});

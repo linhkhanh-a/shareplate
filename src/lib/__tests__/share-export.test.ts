@@ -148,11 +148,11 @@ describe('spreadsheet export', () => {
     expect(sheets.map((s) => s.name)).toEqual(['Bills', 'Items', 'People', 'Settle up', 'Payments']);
     const [billsSheet, items, people] = sheets;
     expect(billsSheet.rows[0]).toEqual([
-      'Date', 'What', 'Category', 'Paid by', 'Subtotal', 'Discount', 'Tax', 'Tip', 'Total', 'Split', 'Plan', 'Linh Bui', 'An Nguyễn', 'Hương',
+      'Date', 'What', 'Category', 'Paid by', 'Subtotal', 'Discount', 'Tax', 'Tip', 'Total', 'Paid in', 'Split', 'Plan', 'Linh Bui', 'An Nguyễn', 'Hương',
     ]);
     expect(billsSheet.rows[1].slice(0, 4)).toEqual([{ date: '2026-10-23' }, '=Grab', 'Transport', 'An Nguyễn']);
     expect(billsSheet.rows[1].slice(-3)).toEqual([null, { money: 6 }, { money: 12 }]);
-    expect(billsSheet.rows[2][10]).toBe('Night market');
+    expect(billsSheet.rows[2][11]).toBe('Night market');
     expect(items.rows[1]).toEqual([{ date: '2026-10-24' }, 'Hotpot, "the good one"', 'Hotpot for 3', { money: 60 }, 'Linh Bui, An Nguyễn, Hương']);
     expect(people.rows[3]).toEqual(['Hương (guest)', { money: 0 }, { money: 32 }, { money: 10 }, { money: 0 }, { money: -22 }, 'Owes', 'huong@example.com']);
   });
@@ -163,7 +163,7 @@ describe('spreadsheet export', () => {
     const lines = csv.trim().split('\r\n');
     expect(lines).toHaveLength(3);
     // A title starting with "=" is never run as a formula; quotes and commas are escaped.
-    expect(lines[1]).toBe("2026-10-23,'=Grab,Transport,An Nguyễn,18.00,0.00,0.00,0.00,18.00,Exact amounts,,,6.00,12.00");
+    expect(lines[1]).toBe("2026-10-23,'=Grab,Transport,An Nguyễn,18.00,0.00,0.00,0.00,18.00,,Exact amounts,,,6.00,12.00");
     expect(lines[2]).toContain('"Hotpot, ""the good one"""');
     expect(csvValue('line\nbreak')).toBe('"line\nbreak"');
   });

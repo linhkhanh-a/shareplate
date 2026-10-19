@@ -191,6 +191,23 @@ export function useRenameTrip(id: string) {
   });
 }
 
+export interface FxRate {
+  rate: number;
+  date: string;
+  source: string;
+}
+
+/** Today's (or a past day's) exchange rate, from free sources through the fx-rate function. */
+export async function fetchRate(from: string, to: string, date: string): Promise<FxRate> {
+  const { data, error } = await supabase.functions.invoke('fx-rate', { body: { from, to, date } });
+  if (error) {
+    const context = (error as { context?: Response }).context;
+    const body = context && typeof context.json === 'function' ? await context.json().catch(() => null) : null;
+    throw new Error(body?.message ?? "Couldn't get a rate right now. Type the rate yourself.");
+  }
+  return data as FxRate;
+}
+
 export interface FoundPlace {
   name: string;
   address: string;
@@ -540,6 +557,12 @@ export interface Bill {
   tax_rate_bp?: number | null;
   tip_rate_bp?: number | null;
   total_cents: number;
+  /** Paid in another currency: which, at what rate (trip currency per unit), and the total in it. */
+  currency?: string | null;
+  fx_rate?: number | null;
+  original_total_cents?: number | null;
+  /** What was typed in that currency, to show it again when editing. */
+  entry?: Record<string, unknown> | null;
   bill_date: string;
   bill_image_path: string | null;
   paid_by_member_id: string;
@@ -573,6 +596,11 @@ export interface BillDraft {
   total_cents: number;
   bill_date: string;
   participants: { member_id: string; share_input: number | null; amount_cents: number }[];
+  /** Paid in another currency (all amounts above are already converted). */
+  currency?: string | null;
+  fx_rate?: string | null;
+  original_total_cents?: number | null;
+  entry?: Record<string, unknown> | null;
 }
 
 // Postgres bigint columns can arrive as strings; amounts are always whole cents.
@@ -585,7 +613,7 @@ export function useBills(tripId: string) {
       const { data, error } = await supabase
         .from('bills')
         .select(
-          'id, title, vendor, category, split_mode, subtotal_cents, discount_cents, tax_cents, tip_cents, discount_rate_bp, tax_rate_bp, tip_rate_bp, total_cents, bill_date, bill_image_path, paid_by_member_id, itinerary_item_id, version, created_at, shares:bill_participants(group_member_id, share_input, amount_cents, items_cents, discount_cents, tax_cents, tip_cents)',
+          'id, title, vendor, category, split_mode, subtotal_cents, discount_cents, tax_cents, tip_cents, discount_rate_bp, tax_rate_bp, tip_rate_bp, total_cents, currency, fx_rate, original_total_cents, entry, bill_date, bill_image_path, paid_by_member_id, itinerary_item_id, version, created_at, shares:bill_participants(group_member_id, share_input, amount_cents, items_cents, discount_cents, tax_cents, tip_cents)',
         )
         .eq('group_id', tripId)
         .order('bill_date', { ascending: false })
@@ -598,6 +626,8 @@ export function useBills(tripId: string) {
         tax_cents: n(b.tax_cents),
         tip_cents: n(b.tip_cents),
         total_cents: n(b.total_cents),
+        fx_rate: b.fx_rate == null ? null : Number(b.fx_rate),
+        original_total_cents: b.original_total_cents == null ? null : n(b.original_total_cents),
         shares: b.shares.map((s) => ({
           ...s,
           amount_cents: n(s.amount_cents),

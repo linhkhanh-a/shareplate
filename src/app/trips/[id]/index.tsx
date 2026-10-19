@@ -47,7 +47,7 @@ import {
   type Member,
   type Trip,
 } from '@/lib/queries';
-import { CURRENCIES, formatCents } from '@/money';
+import { CURRENCIES, formatCents, formatIn } from '@/money';
 
 type TripTab = 'bills' | 'plan' | 'people' | 'updates' | 'settings';
 const TAB_VALUES: TripTab[] = ['bills', 'plan', 'people', 'updates', 'settings'];
@@ -461,6 +461,11 @@ function BillRow({
       </View>
       <View style={styles.billAmounts}>
         <ThemedText type="money">{formatCents(bill.total_cents)}</ThemedText>
+        {bill.currency && bill.original_total_cents ? (
+          <ThemedText type="small" themeColor="textSecondary" style={styles.tabular}>
+            {`Paid ${formatIn(bill.original_total_cents, bill.currency)}`}
+          </ThemedText>
+        ) : null}
         <ThemedText type="small" themeColor="textSecondary" style={styles.tabular}>
           {myShare !== undefined ? `Your share ${formatCents(myShare)}` : 'Not on this bill'}
         </ThemedText>

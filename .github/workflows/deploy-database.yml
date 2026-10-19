@@ -52,5 +52,8 @@ jobs:
       - name: Deploy place search (edge function)
         run: supabase functions deploy place-search --project-ref "$SUPABASE_PROJECT_ID"
 
+      - name: Deploy exchange rates (edge function)
+        run: supabase functions deploy fx-rate --project-ref "$SUPABASE_PROJECT_ID"
+
       - name: Show which migrations are live
         run: supabase migration list --password "$SUPABASE_DB_PASSWORD"

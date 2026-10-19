@@ -18,8 +18,12 @@ export {
   centsToText,
   CURRENCIES,
   currencySymbolFor,
+  formatIn,
+  normalizeAmountIn,
   normalizeMoneyText,
   normalizePercentText,
+  PAID_CURRENCIES,
+  paidCurrency,
   parseMoneyText,
   type CurrencyCode,
 } from './entry';
@@ -49,3 +53,4 @@ export {
   type SettlementForBalance,
 } from './balances';
 export { simplifyDebts, type Transfer } from './simplify';
+export { convertCents, convertItemized, convertShares, formatRate, scaledRate, type ConvertedMember } from './fx';

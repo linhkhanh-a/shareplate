@@ -2,7 +2,10 @@ import { looksLikeDiscount, type ScanResult } from '../../supabase/functions/sca
 
 import {
   centsToText,
+  convertItemized,
   formatCents,
+  formatIn,
+  normalizeAmountIn,
   MoneyError,
   normalizePercentText,
   parseMoneyText,
@@ -37,6 +40,9 @@ export interface ReceiptDraft {
   discount: string;
   tax: string;
   tip: string;
+  /** Paid in another currency (null: the trip's), and the rate to the trip's currency as typed. */
+  paidIn: string | null;
+  rate: string;
   /** Whether each of discount, tax and tip was typed as an amount or a percentage. */
   discountMode: ExtraMode;
   taxMode: ExtraMode;
@@ -72,6 +78,8 @@ export function emptyDraft(base: { payerId: string; date: string; imagePath?: st
     taxMode: 'amount',
     tipMode: 'amount',
     imagePath: base.imagePath ?? null,
+    paidIn: null,
+    rate: '',
     printedSubtotalCents: null,
     printedTotalCents: null,
     warnings: [],
@@ -98,6 +106,8 @@ export function draftFromScan(
     taxMode: 'amount',
     tipMode: 'amount',
     imagePath: base.imagePath,
+    paidIn: null,
+    rate: '',
     printedSubtotalCents: scan.subtotal_cents,
     printedTotalCents: scan.total_cents,
     warnings: scan.warnings,
@@ -118,11 +128,29 @@ export interface SavedItemizedBill {
   tip_rate_bp?: number | null;
   bill_image_path: string | null;
   items: { name: string; price_cents: number; member_ids: string[] }[];
+  currency?: string | null;
+  fx_rate?: number | null;
+  entry?: Record<string, unknown> | null;
 }
 
 const rateText = (bp: number) => formatPercent(bp).replace('%', '');
 
 export function draftFromBill(bill: SavedItemizedBill): ReceiptDraft {
+  const draft = draftFromSavedAmounts(bill);
+  // Paid in another currency: show what was typed in it, not the converted amounts.
+  const entry = bill.currency ? (bill.entry as { prices?: unknown; discount?: unknown; tax?: unknown; tip?: unknown } | null) : null;
+  if (!entry || !Array.isArray(entry.prices) || entry.prices.length !== draft.items.length) return draft;
+  const text = (v: unknown, fallback: string) => (typeof v === 'string' ? v : fallback);
+  return {
+    ...draft,
+    items: draft.items.map((i, idx) => ({ ...i, price: text((entry.prices as unknown[])[idx], i.price) })),
+    discount: text(entry.discount, draft.discount),
+    tax: text(entry.tax, draft.tax),
+    tip: text(entry.tip, draft.tip),
+  };
+}
+
+function draftFromSavedAmounts(bill: SavedItemizedBill): ReceiptDraft {
   return {
     title: bill.title ?? '',
     vendor: bill.vendor ?? '',
@@ -142,16 +170,20 @@ export function draftFromBill(bill: SavedItemizedBill): ReceiptDraft {
     taxMode: bill.tax_rate_bp != null ? 'percent' : 'amount',
     tipMode: bill.tip_rate_bp != null ? 'percent' : 'amount',
     imagePath: bill.bill_image_path,
+    paidIn: bill.currency ?? null,
+    rate: bill.fx_rate ? String(bill.fx_rate) : '',
     printedSubtotalCents: null,
     printedTotalCents: null,
     warnings: [],
   };
 }
 
-const readAmount = (text: string): Cents | null => {
+const readAmount = (text: string, code: string | null = null): Cents | null => {
   if (!text.trim()) return 0;
   try {
-    const cents = parseMoneyText(text);
+    const normal = normalizeAmountIn(text, code);
+    if (normal === null) return null;
+    const cents = parseMoneyText(normal || '0');
     return cents < 0 ? null : cents;
   } catch {
     return null;
@@ -175,10 +207,10 @@ export const readRate = (text: string): number | null => {
  * the items after discount (tax), and the items after discount, before tax (tip).
  */
 export function extrasCents(
-  draft: Pick<ReceiptDraft, 'discount' | 'tax' | 'tip' | 'discountMode' | 'taxMode' | 'tipMode'>,
+  draft: Pick<ReceiptDraft, 'discount' | 'tax' | 'tip' | 'discountMode' | 'taxMode' | 'tipMode'> & { paidIn?: string | null },
   subtotal: Cents,
 ): { discount: Cents; tax: Cents; tip: Cents; rates: { discount: number | null; tax: number | null; tip: number | null } } | null {
-  const read = (text: string, mode: ExtraMode) => (mode === 'percent' ? readRate(text) : readAmount(text));
+  const read = (text: string, mode: ExtraMode) => (mode === 'percent' ? readRate(text) : readAmount(text, draft.paidIn ?? null));
   const d = read(draft.discount, draft.discountMode);
   const t = read(draft.tax, draft.taxMode);
   const p = read(draft.tip, draft.tipMode);
@@ -240,10 +272,12 @@ export function itemsMessage(draft: ReceiptDraft, itemErrors: Record<string, str
 }
 
 export function checkDraft(draft: ReceiptDraft): DraftCheck {
+  // Amounts on the bill are in the currency it was paid in.
+  const fmt = (cents: Cents) => (draft.paidIn ? formatIn(cents, draft.paidIn) : formatCents(cents));
   const itemErrors: Record<string, string> = {};
   const prices: Cents[] = [];
   for (const item of draft.items) {
-    const price = item.price.trim() ? readAmount(item.price) : null;
+    const price = item.price.trim() ? readAmount(item.price, draft.paidIn) : null;
     if (!item.name.trim() && !item.price.trim()) itemErrors[item.key] = 'This item is empty. Fill it in, or remove it with ×.';
     else if (!item.name.trim()) itemErrors[item.key] = 'Add a name.';
     else if (price === null) itemErrors[item.key] = 'Enter a price like 12.50.';
@@ -287,18 +321,18 @@ export function checkDraft(draft: ReceiptDraft): DraftCheck {
     const hint =
       diff < 0
         ? 'Look for a missed line or a misread price.'
-        : `Look for discount lines read as items (they'd add up to ${diff % 2 === 0 ? `${formatCents(diff / 2)} or ` : ''}${formatCents(diff)}), or a misread price.`;
+        : `Look for discount lines read as items (they'd add up to ${diff % 2 === 0 ? `${fmt(diff / 2)} or ` : ''}${fmt(diff)}), or a misread price.`;
     mismatches.push(
-      `Items come to ${formatCents(compare)}${discount > 0 ? ' after discounts' : ''}, ` +
-        `${formatCents(Math.abs(diff))} ${diff > 0 ? 'more' : 'less'} than the receipt's subtotal of ${formatCents(printed)}. ${hint}`,
+      `Items come to ${fmt(compare)}${discount > 0 ? ' after discounts' : ''}, ` +
+        `${fmt(Math.abs(diff))} ${diff > 0 ? 'more' : 'less'} than the receipt's subtotal of ${fmt(printed)}. ${hint}`,
     );
   }
   const taxLooksIncluded = tax > 0 && draft.printedTotalCents !== null && draft.printedTotalCents === total - tax;
   if (draft.printedTotalCents !== null && draft.printedTotalCents !== total) {
     mismatches.push(
       taxLooksIncluded
-        ? `This comes to ${formatCents(total)}, but the receipt's total is ${formatCents(draft.printedTotalCents)}: exactly the tax less. The tax looks already included in the prices (receipts often say "incl." or "VAT included").`
-        : `This comes to ${formatCents(total)}, but the receipt's total says ${formatCents(draft.printedTotalCents)}.`,
+        ? `This comes to ${fmt(total)}, but the receipt's total is ${fmt(draft.printedTotalCents)}: exactly the tax less. The tax looks already included in the prices (receipts often say "incl." or "VAT included").`
+        : `This comes to ${fmt(total)}, but the receipt's total says ${fmt(draft.printedTotalCents)}.`,
     );
   }
   const discounted = subtotal - discount;
@@ -338,7 +372,7 @@ export function itemizedPayload(
   result: ItemizedBillResult,
   ctx: { tripId: string; billId?: string; expectedVersion?: number },
 ) {
-  return {
+  const base = {
     id: ctx.billId,
     expected_version: ctx.expectedVersion,
     group_id: ctx.tripId,
@@ -348,12 +382,49 @@ export function itemizedPayload(
     category: draft.category,
     bill_date: draft.date,
     image_path: draft.imagePath,
-    discount_cents: result.members.reduce((s, m) => s + m.discountCents, 0),
-    tax_cents: result.members.reduce((s, m) => s + m.taxCents, 0),
-    tip_cents: result.members.reduce((s, m) => s + m.tipCents, 0),
     ...rates(draft),
-    items: draft.items.map((i) => ({ name: i.name.trim(), price_cents: readAmount(i.price) ?? 0, member_ids: i.memberIds })),
-    participants: result.members.map((m) => ({
+  };
+  const prices = draft.items.map((i) => readAmount(i.price, draft.paidIn) ?? 0);
+  const fx = foreignRate(draft);
+  if (!fx) {
+    return {
+      ...base,
+      discount_cents: result.members.reduce((s, m) => s + m.discountCents, 0),
+      tax_cents: result.members.reduce((s, m) => s + m.taxCents, 0),
+      tip_cents: result.members.reduce((s, m) => s + m.tipCents, 0),
+      items: draft.items.map((i, idx) => ({ name: i.name.trim(), price_cents: prices[idx], member_ids: i.memberIds })),
+      participants: result.members.map((m) => ({
+        member_id: m.memberId,
+        items_cents: m.itemsCents,
+        discount_cents: m.discountCents,
+        tax_cents: m.taxCents,
+        tip_cents: m.tipCents,
+        amount_cents: m.totalCents,
+      })),
+      currency: null,
+      fx_rate: null,
+      original_total_cents: null,
+      entry: null,
+    };
+  }
+  // Paid in another currency: convert everything, and keep what was typed.
+  const c = convertItemized(
+    {
+      itemPrices: prices,
+      discountCents: result.members.reduce((s, m) => s + m.discountCents, 0),
+      taxCents: result.members.reduce((s, m) => s + m.taxCents, 0),
+      tipCents: result.members.reduce((s, m) => s + m.tipCents, 0),
+      members: result.members,
+    },
+    fx.rate,
+  );
+  return {
+    ...base,
+    discount_cents: c.discountCents,
+    tax_cents: c.taxCents,
+    tip_cents: c.tipCents,
+    items: draft.items.map((i, idx) => ({ name: i.name.trim(), price_cents: c.itemPrices[idx], member_ids: i.memberIds })),
+    participants: c.members.map((m) => ({
       member_id: m.memberId,
       items_cents: m.itemsCents,
       discount_cents: m.discountCents,
@@ -361,7 +432,19 @@ export function itemizedPayload(
       tip_cents: m.tipCents,
       amount_cents: m.totalCents,
     })),
+    currency: fx.currency,
+    fx_rate: fx.rate,
+    original_total_cents: result.totalCents,
+    entry: { prices: draft.items.map((i) => i.price), discount: draft.discount, tax: draft.tax, tip: draft.tip },
   };
+}
+
+/** The currency and rate when a draft is paid in another currency with a usable rate, else null. */
+export function foreignRate(draft: Pick<ReceiptDraft, 'paidIn' | 'rate'>): { currency: string; rate: string } | null {
+  if (!draft.paidIn) return null;
+  const rate = draft.rate.trim().replace(',', '.');
+  if (!/^\d+(\.\d+)?$/.test(rate) || Number(rate) <= 0) return null;
+  return { currency: draft.paidIn, rate };
 }
 
 function rates(draft: ReceiptDraft) {
@@ -377,10 +460,10 @@ function rates(draft: ReceiptDraft) {
 export function moveItemToDiscount(draft: ReceiptDraft, key: string): ReceiptDraft {
   const item = draft.items.find((i) => i.key === key);
   if (!item) return draft;
-  const price = readAmount(item.price) ?? 0;
+  const price = readAmount(item.price, draft.paidIn) ?? 0;
   const items = draft.items.filter((i) => i.key !== key);
   // A percentage discount becomes the amount it came to, plus this line.
-  const subtotal = draft.items.reduce((sum, i) => sum + (readAmount(i.price) ?? 0), 0);
+  const subtotal = draft.items.reduce((sum, i) => sum + (readAmount(i.price, draft.paidIn) ?? 0), 0);
   const current = extrasCents(draft, subtotal)?.discount ?? 0;
   return { ...draft, items, discount: centsText(current + price), discountMode: 'amount' };
 }
