@@ -22,7 +22,18 @@ export interface Profile {
   full_name: string | null;
   avatar_url: string | null;
   zelle_identifier: string | null;
+  /** Venmo, PayPal.Me and Cash App names, without @ or $. Display only. */
+  venmo_username: string | null;
+  paypal_username: string | null;
+  cashapp_cashtag: string | null;
   onboarded_at: string | null;
+}
+
+/** Where someone can be paid, besides Zelle. */
+export interface PayFields {
+  venmo_username: string | null;
+  paypal_username: string | null;
+  cashapp_cashtag: string | null;
 }
 
 export interface Trip {
@@ -58,9 +69,13 @@ export interface Member {
   left_at: string | null;
   /** Their own daily spending allowance for the trip, 0 when not set. */
   daily_allowance_cents: number;
-  profile: { zelle_identifier: string | null } | null;
+  profile: ({ zelle_identifier: string | null } & Partial<PayFields>) | null;
   /** A guest's Zelle info, recorded by an admin (null for people with an account). */
   zelle_identifier: string | null;
+  /** A guest's Venmo, PayPal and Cash App, recorded by an admin. */
+  venmo_username?: string | null;
+  paypal_username?: string | null;
+  cashapp_cashtag?: string | null;
 }
 
 export interface InvitePreview {
@@ -103,7 +118,7 @@ export function useProfile() {
     queryFn: async (): Promise<Profile> => {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, email, full_name, avatar_url, zelle_identifier, onboarded_at')
+        .select('id, email, full_name, avatar_url, zelle_identifier, venmo_username, paypal_username, cashapp_cashtag, onboarded_at')
         .eq('id', uid!)
         .single();
       if (error) throw error;
@@ -116,7 +131,7 @@ export function useUpdateProfile() {
   const uid = useUserId();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (changes: Partial<Pick<Profile, 'full_name' | 'zelle_identifier' | 'onboarded_at'>>) => {
+    mutationFn: async (changes: Partial<Pick<Profile, 'full_name' | 'zelle_identifier' | 'onboarded_at' | keyof PayFields>>) => {
       const { error } = await supabase.from('profiles').update(changes).eq('id', uid!);
       if (error) throw error;
     },
@@ -390,7 +405,9 @@ export function useMembers(tripId: string) {
     queryFn: async (): Promise<Member[]> => {
       const { data, error } = await supabase
         .from('group_members')
-        .select('id, user_id, display_name, role, joined_at, left_at, daily_allowance_cents, zelle_identifier, profile:profiles(zelle_identifier)')
+        .select(
+          'id, user_id, display_name, role, joined_at, left_at, daily_allowance_cents, zelle_identifier, venmo_username, paypal_username, cashapp_cashtag, profile:profiles(zelle_identifier, venmo_username, paypal_username, cashapp_cashtag)',
+        )
         .eq('group_id', tripId)
         .order('joined_at');
       if (error) throw error;
@@ -444,12 +461,15 @@ export function useRemoveMember(tripId: string) {
   });
 }
 
-/** Records a guest's Zelle email or phone (admins only). */
+/** Records where a guest can be paid: Zelle, Venmo, PayPal, Cash App (admins only). */
 export function useSetGuestZelle(tripId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ memberId, zelle }: { memberId: string; zelle: string | null }) => {
-      const { error } = await supabase.from('group_members').update({ zelle_identifier: zelle }).eq('id', memberId);
+    mutationFn: async ({ memberId, zelle, ...apps }: { memberId: string; zelle: string | null } & Partial<PayFields>) => {
+      const { error } = await supabase
+        .from('group_members')
+        .update({ zelle_identifier: zelle, ...apps })
+        .eq('id', memberId);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.members(tripId) }),
@@ -530,7 +550,7 @@ export function useJoinTrip() {
 // Bills and payments
 // ---------------------------------------------------------------------------
 
-export type SplitMode = 'equal' | 'percent' | 'exact' | 'itemized';
+export type SplitMode = 'equal' | 'percent' | 'exact' | 'shares' | 'itemized';
 
 export interface BillShare {
   group_member_id: string;
@@ -582,6 +602,8 @@ export interface Payment {
   created_at: string;
   /** The account that recorded it (null for older payments or deleted accounts). */
   created_by: string | null;
+  /** Which app it went through, when known: venmo, paypal, cashapp, zelle, cash or other. */
+  method?: string | null;
 }
 
 /** What the bill editor sends to the database. */
@@ -592,7 +614,7 @@ export interface BillDraft {
   paid_by_member_id: string;
   title: string;
   category: string;
-  split_mode: 'equal' | 'percent' | 'exact';
+  split_mode: 'equal' | 'percent' | 'exact' | 'shares';
   total_cents: number;
   bill_date: string;
   participants: { member_id: string; share_input: number | null; amount_cents: number }[];
@@ -648,7 +670,7 @@ export function usePayments(tripId: string) {
     queryFn: async (): Promise<Payment[]> => {
       const { data, error } = await supabase
         .from('settlements')
-        .select('id, from_member_id, to_member_id, amount_cents, settled_on, created_at, created_by')
+        .select('id, from_member_id, to_member_id, amount_cents, settled_on, created_at, created_by, method')
         .eq('group_id', tripId)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -695,8 +717,8 @@ export function useDeleteBill(tripId: string) {
 export function useRecordPayment(tripId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (p: { from_member_id: string; to_member_id: string; amount_cents: number }) => {
-      const { error } = await supabase.from('settlements').insert({ ...p, group_id: tripId, method: 'zelle' });
+    mutationFn: async ({ method, ...p }: { from_member_id: string; to_member_id: string; amount_cents: number; method?: string }) => {
+      const { error } = await supabase.from('settlements').insert({ ...p, group_id: tripId, method: method ?? 'other' });
       if (error) throw error;
     },
     // Show the payment (and the new balances) right away; undo if saving fails.

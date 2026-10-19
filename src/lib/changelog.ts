@@ -13,6 +13,16 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    id: '2026-10-19c',
+    date: 'Oct 19, 2026',
+    title: 'Pay with Venmo, PayPal or Cash App, and split by shares',
+    items: [
+      'Add your Venmo, PayPal or Cash App in your profile. In Settle up, one tap opens the app with the amount filled in.',
+      'Personal messages from Share and export include those one-tap links.',
+      'A new By shares split: 2 shares for a couple, 0.5 for a child, and the bill is split in proportion.',
+    ],
+  },
+  {
     id: '2026-10-19b',
     date: 'Oct 19, 2026',
     title: 'Bills in any currency',

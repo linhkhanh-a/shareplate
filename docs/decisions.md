@@ -543,3 +543,11 @@ proportion, and bills by item convert each price, discount, tax and tip and
 spread each one like before, so everything still adds up for the bill and for
 each person. The bill keeps the currency, rate, original total and what was
 typed (`entry`), so it shows "Paid CHF 54.50" and edits in francs.
+
+## 67. Venmo, PayPal and Cash App links; "By shares" split
+
+- **Display only, like Zelle.** People add a Venmo username, PayPal.Me name or $Cashtag (profile, or an admin for a guest, stored on `group_members` like guest Zelle). Settle up shows a button per app for the payer that opens a link with the amount and a note filled in: `venmo.com/?txn=pay&recipients=…&amount=…&note=…`, `paypal.me/name/12.34USD`, `cash.app/$tag/12.34`. Nothing is connected, no API keys, no money moves through Shareplate.
+- **Currency.** Venmo and Cash App only send US dollars, so the amount is filled in only when the trip is in USD; PayPal gets the amount in the trip's currency.
+- **Recorded method.** Mark as paid notes the app you opened (`settlements.method`: venmo, paypal, cashapp), otherwise `other`. Older payments say `zelle` because that used to be the default, so only the three apps are shown on payment rows.
+- **Usernames are cleaned up in the app** (drops @ and $, takes the name out of a pasted profile link); the database only checks the characters.
+- **By shares** stores each person's shares in hundredths in `share_input` (1.5 shares = 150) and splits with the same largest-remainder `allocate`, so shares add up to the cent. Blank means 1 share. The database checks everyone on a shares bill has more than 0. Bills paid in another currency are re-split by the same shares on the converted total.

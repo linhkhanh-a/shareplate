@@ -45,13 +45,14 @@ import { formerOnBill } from '@/lib/people';
 import { confirmAction } from '@/lib/platform';
 import { describeEditors } from '@/lib/presence';
 import { useBills, useMembers, usePinBill, useSaveBill, useTrip, type Bill, type Member } from '@/lib/queries';
-import { centsToText, currencySymbol, formatCents, formatIn, normalizeAmountIn, normalizePercentText, paidCurrency } from '@/money';
+import { centsToText, currencySymbol, formatCents, formatIn, normalizeAmountIn, normalizePercentText, paidCurrency, parseShares, sharesText } from '@/money';
 
 /** Back to the trip, even when the bill was opened directly from a link. */
 const MODES: { value: ManualMode; label: string }[] = [
   { value: 'equal', label: 'Equally' },
   { value: 'percent', label: 'By percent' },
   { value: 'exact', label: 'Exact amounts' },
+  { value: 'shares', label: 'By shares' },
 ];
 
 export default function BillScreen() {
@@ -435,15 +436,22 @@ function BillForm({
                       </ThemedText>
                     ) : null}
                     <TextInput
-                      accessibilityLabel={`${m.display_name}'s ${mode === 'percent' ? 'percentage' : 'amount'}`}
+                      accessibilityLabel={`${m.display_name}'s ${mode === 'percent' ? 'percentage' : mode === 'shares' ? 'shares' : 'amount'}`}
                       value={row.input}
                       onChangeText={(t) => updateRow(m.id, { input: t.replace(/[^0-9.,]/g, '') })}
                       onBlur={() => {
-                        const normal = mode === 'percent' ? normalizePercentText(row.input) : normalizeAmountIn(row.input, paidIn);
+                        const normal =
+                          mode === 'percent'
+                            ? normalizePercentText(row.input)
+                            : mode === 'shares'
+                              ? row.input.trim() && parseShares(row.input) !== null
+                                ? sharesText(parseShares(row.input)!)
+                                : null
+                              : normalizeAmountIn(row.input, paidIn);
                         if (normal !== null && normal !== row.input) updateRow(m.id, { input: normal });
                       }}
                       // Left blank, it shows the rest of the bill in grey: that's filled in automatically.
-                      placeholder={split.auto[m.id] ?? (mode === 'percent' ? '0' : '0.00')}
+                      placeholder={split.auto[m.id] ?? (mode === 'percent' ? '0' : mode === 'shares' ? '1' : '0.00')}
                       placeholderTextColor={theme.textSecondary}
                       keyboardType="decimal-pad"
                       inputMode="decimal"
@@ -451,6 +459,11 @@ function BillForm({
                       style={[styles.shareInputText, { color: theme.text }]}
                     />
                     {mode === 'percent' ? <ThemedText themeColor="textSecondary">%</ThemedText> : null}
+                    {mode === 'shares' ? (
+                      <ThemedText type="small" themeColor="textSecondary">
+                        {row.input.trim() === '1' || (!row.input.trim() && split.auto[m.id] === '1') ? 'share' : 'shares'}
+                      </ThemedText>
+                    ) : null}
                   </View>
                 ) : null}
                 {mode !== 'equal' && row.included && split.auto[m.id] !== undefined ? (
@@ -473,7 +486,9 @@ function BillForm({
         </ThemedText>
         {mode !== 'equal' ? (
           <ThemedText type="small" themeColor="textSecondary">
-            Leave someone blank and they get whatever is left, shown in grey.
+            {mode === 'shares'
+              ? 'Give each person a number of shares, like 2 for a couple or 0.5 for a child. Blank means 1 share.'
+              : 'Leave someone blank and they get whatever is left, shown in grey.'}
           </ThemedText>
         ) : null}
       </Section>

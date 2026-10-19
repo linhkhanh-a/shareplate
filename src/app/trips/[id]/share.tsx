@@ -13,7 +13,8 @@ import { friendlyError } from '@/lib/errors';
 import { billsCsv, exportSheets, fileSlug } from '@/lib/export';
 import { deliverFile, deliverImage } from '@/lib/files';
 import { shortDate } from '@/lib/itinerary';
-import { zelleOf } from '@/lib/people';
+import { hasPayInfo } from '@/lib/pay-apps';
+import { payHandlesOf, zelleOf } from '@/lib/people';
 import { shareText } from '@/lib/platform';
 import { fetchBillItems, useBills, useItinerary, useMembers, usePayments, useTrip } from '@/lib/queries';
 import { personMessage, summaryText, tripSummary, type TripSummary } from '@/lib/summary';
@@ -43,10 +44,10 @@ export default function ShareScreen() {
     );
   }
 
-  const input = { tripName: trip.data.name, members: members.data, bills: bills.data, payments: payments.data };
+  const input = { tripName: trip.data.name, members: members.data, bills: bills.data, payments: payments.data, currency: trip.data.currency };
   const summary = tripSummary(input);
   const me = members.data.find((m) => m.user_id === uid && !m.left_at);
-  const myZelle = zelleOf(me);
+  const myPayInfo = hasPayInfo(zelleOf(me), payHandlesOf(me));
   const owedToMe = summary.transfers.filter((t) => t.toId === me?.id).reduce((sum, t) => sum + t.amount, 0);
   const quick = trip.data.mode === 'quick';
   const slug = fileSlug(trip.data.name);
@@ -120,13 +121,13 @@ export default function ShareScreen() {
 
       {status ? <Notice tone={status.tone}>{status.text}</Notice> : null}
 
-      {owedToMe > 0 && !myZelle ? (
+      {owedToMe > 0 && !myPayInfo ? (
         <Notice>
-          <ThemedText type="strong">Add your Zelle info first</ThemedText>
+          <ThemedText type="strong">Add how to pay you first</ThemedText>
           <ThemedText type="small">
-            {`People owe you ${formatCents(owedToMe)}. Add your Zelle email or phone so the messages tell them where to send it.`}
+            {`People owe you ${formatCents(owedToMe)}. Add your Zelle, Venmo, PayPal or Cash App so the messages tell them where to send it.`}
           </ThemedText>
-          <Button variant="secondary" label="Add Zelle info" onPress={() => router.push('/profile')} />
+          <Button variant="secondary" label="Add payment info" onPress={() => router.push('/profile')} />
         </Notice>
       ) : null}
 
@@ -148,7 +149,7 @@ export default function ShareScreen() {
 
       <Section title="Message each person">
         <ThemedText type="small" themeColor="textSecondary">
-          A short note with their share and who to pay, with the Zelle info when there is some.
+          A short note with their share and who to pay, with Zelle info and one-tap Venmo, PayPal or Cash App links when there are some.
         </ThemedText>
         <View style={{ gap: Spacing.two }}>
           {people.map((p) => {

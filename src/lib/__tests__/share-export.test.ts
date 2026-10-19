@@ -134,6 +134,26 @@ describe('trip summary', () => {
   });
 });
 
+describe('messages with payment apps', () => {
+  it('lists every way to pay and adds one-tap links', () => {
+    const withApps = members.map((m) =>
+      m.id === 'linh' ? { ...m, profile: { zelle_identifier: 'linh@example.com', venmo_username: 'Linh-Bui', paypal_username: 'linhbui' } } : m,
+    );
+    const s = tripSummary({ ...input, members: withApps, currency: 'USD' });
+    expect(summaryText(s)).toContain('• Hương pays Linh Bui $22.00 (Zelle: linh@example.com, Venmo: @Linh-Bui, PayPal: paypal.me/linhbui)');
+    expect(personMessage(s, 'huong', 'linh')).toBe(
+      [
+        'Hi Hương! Your share of Đà Lạt spring break comes to $32.00.',
+        'Please send $22.00 to me (Zelle: linh@example.com, Venmo: @Linh-Bui, PayPal: paypal.me/linhbui).',
+        'Pay in one tap:',
+        '• Venmo: https://venmo.com/?txn=pay&recipients=Linh-Bui&amount=22.00&note=%C4%90%C3%A0%20L%E1%BA%A1t%20spring%20break%20(Shareplate)',
+        '• PayPal: https://paypal.me/linhbui/22.00USD',
+        'Thanks!',
+      ].join('\n'),
+    );
+  });
+});
+
 describe('messages for people who are settled', () => {
   it('says there is nothing to pay', () => {
     const s = tripSummary({ ...input, payments: [...payments, { id: 'p2', from_member_id: 'huong', to_member_id: 'linh', amount_cents: 2200, settled_on: '2026-10-26', created_at: '', created_by: null }, { id: 'p3', from_member_id: 'an', to_member_id: 'linh', amount_cents: 800, settled_on: '2026-10-26', created_at: '', created_by: null }] });
