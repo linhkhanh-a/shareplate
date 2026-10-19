@@ -210,6 +210,26 @@ export async function searchPlaces(query: string, near: { lat: number; lng: numb
   return (data as { places: FoundPlace[] }).places ?? [];
 }
 
+/** Clears every bill and payment in the trip (admins only); people and the plan stay. */
+export function useStartOver(tripId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.rpc('clear_trip_money', { p_group_id: tripId });
+      if (error) throw error;
+      const photos = (data as string[] | null) ?? [];
+      // The bills are gone either way; tidying their receipt photos is best effort.
+      if (photos.length > 0) await supabase.storage.from('receipts').remove(photos);
+    },
+    onSettled: () =>
+      Promise.all([
+        invalidateMoney(qc, tripId),
+        qc.invalidateQueries({ queryKey: keys.events(tripId) }),
+        qc.invalidateQueries({ queryKey: keys.removedPayments(tripId) }),
+      ]),
+  });
+}
+
 /** Admins choose the currency the trip's amounts are shown in (no conversion). */
 export function useSetTripCurrency(id: string) {
   const qc = useQueryClient();

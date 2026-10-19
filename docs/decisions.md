@@ -485,3 +485,19 @@ Shareplate's own dialog instead of the browser's "this site says" pop-up, with
 a red button for deleting, removing and leaving. The one browser pop-up left is
 "Leave site?" when closing or reloading the tab with unsaved changes: browsers
 don't let sites replace that one.
+
+## 63. Changing a bill after people paid: say what happens, and a way to start over
+
+Payments aren't tied to a bill: "1 paid 3 $50" just evens things out. So when
+a bill is deleted or lowered after people paid, those payments stay and some
+people are now owed money back. That's correct, but it surprised people. Now:
+deleting a bill always lists whose balance changes ("2: settled → owes
+$75.00"), and saving an edit does too once the trip has payments, with a line
+saying payments already recorded stay as they are. Settle up explains when
+recorded payments are more than the bills ask for ("Some of this is money going
+back") and what to do: settle it back if the money really moved, or remove the
+payments if they were mistakes or tests. Admins can also "Start over" in Trip
+settings: after typing the trip's name, every bill and payment is cleared in
+one step (people, the plan and settings stay), shown as a single line in
+What's new. We don't delete payments along with a bill, since real money moved,
+and we don't lock settled bills.

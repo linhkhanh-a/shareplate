@@ -34,6 +34,9 @@ describe("what's new", () => {
     expect(describeEvent(ev('member_left', { subject: 'Minh' }), nameOf)).toBe('Minh left the trip');
     expect(describeEvent(ev('member_removed', { subject: 'Minh' }), nameOf)).toBe('An removed Minh from the trip');
     expect(describeEvent(ev('member_returned', { subject: 'Minh' }), nameOf)).toBe('An brought Minh back to the trip');
+    expect(describeEvent(ev('money_cleared', { details: { bills: 1, payments: 9 } }), nameOf)).toBe(
+      'An started over: cleared 1 bill and 9 payments',
+    );
     expect(describeEvent(ev('activity_added', { subject: 'Lake walk', details: { day: 2 } }), nameOf)).toBe(
       'An added Lake walk to day 2 of the plan',
     );
