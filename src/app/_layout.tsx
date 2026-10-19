@@ -89,12 +89,15 @@ function RootNavigator() {
           <Stack.Screen name="trips/new" />
           <Stack.Screen name="trips/[id]" />
           <Stack.Screen name="profile" />
+          <Stack.Screen name="feedback" />
+          <Stack.Screen name="feedback-inbox" />
         </Stack.Protected>
 
         {/* Open to everyone: invite links work before signing in. */}
         <Stack.Screen name="join" />
         <Stack.Screen name="privacy" />
         <Stack.Screen name="help" />
+        <Stack.Screen name="whats-new" />
       </Stack>
       <UpdateBanner />
       <AppDialogHost />

@@ -230,6 +230,68 @@ export function useStartOver(tripId: string) {
   });
 }
 
+export type FeedbackKind = 'idea' | 'problem' | 'question';
+
+export interface FeedbackItem {
+  id: string;
+  kind: FeedbackKind;
+  message: string;
+  contact_email: string | null;
+  page: string | null;
+  app_version: string | null;
+  user_agent: string | null;
+  status: 'new' | 'done';
+  created_at: string;
+}
+
+/** Sends an idea, problem or question to the app's owners. */
+export function useSendFeedback() {
+  return useMutation({
+    mutationFn: async (f: { kind: FeedbackKind; message: string; contact_ok: boolean; page: string | null; app_version: string }) => {
+      const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 400) : null;
+      const { error } = await supabase.from('feedback').insert({ ...f, message: f.message.trim(), user_agent: userAgent });
+      if (error) throw error;
+    },
+  });
+}
+
+/** Whether you're one of the app's owners, who read the feedback. */
+export function useIsAppAdmin() {
+  const uid = useUserId();
+  return useQuery({
+    queryKey: ['app-admin', uid],
+    enabled: !!uid,
+    queryFn: async (): Promise<boolean> => {
+      const { data, error } = await supabase.rpc('is_app_admin');
+      if (error) throw error;
+      return data === true;
+    },
+  });
+}
+
+export function useFeedbackInbox(enabled: boolean) {
+  return useQuery({
+    queryKey: ['feedback-inbox'],
+    enabled,
+    queryFn: async (): Promise<FeedbackItem[]> => {
+      const { data, error } = await supabase.rpc('feedback_inbox');
+      if (error) throw error;
+      return (data ?? []) as FeedbackItem[];
+    },
+  });
+}
+
+export function useMarkFeedback() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: 'new' | 'done' }) => {
+      const { error } = await supabase.from('feedback').update({ status }).eq('id', id);
+      if (error) throw error;
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['feedback-inbox'] }),
+  });
+}
+
 /** Admins choose the currency the trip's amounts are shown in (no conversion). */
 export function useSetTripCurrency(id: string) {
   const qc = useQueryClient();

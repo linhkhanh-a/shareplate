@@ -3,7 +3,11 @@
  * page say, in one place so the words stay consistent and can be searched.
  */
 
+export type TourArt = 'welcome' | 'bills' | 'settle' | 'plan' | 'people' | 'help';
+
 export interface TourSlide {
+  /** Which small picture of the app goes with it. */
+  art: TourArt;
   title: string;
   body: string;
 }
@@ -11,28 +15,34 @@ export interface TourSlide {
 /** The short tour shown the first time, and any time from Help. */
 export const TOUR: TourSlide[] = [
   {
+    art: 'welcome',
     title: 'Welcome to Shareplate',
     body: 'Split trip costs with friends and plan the trip together. Everyone sees the same bills and balances, live.',
   },
   {
+    art: 'bills',
     title: 'Add bills your way',
-    body: 'Tap Add bill to upload a receipt and let Shareplate read it, or type it in: one total, or item by item. Split equally, by percent or by exact amounts; leave someone blank and they get the rest.',
+    body: 'Tap Add bill: upload a receipt and Shareplate reads it, or type it in as one total or item by item. Leave someone blank and they get the rest.',
   },
   {
+    art: 'settle',
     title: 'Settle up with the fewest payments',
-    body: 'Settle up works out who pays whom, with as few payments as possible, and shows each person’s Zelle info. Tap Mark as paid once the money is sent.',
+    body: 'Settle up works out who pays whom with as few payments as possible, and shows where to send it. Tap Mark as paid once it’s sent.',
   },
   {
+    art: 'plan',
     title: 'Plan the days',
-    body: 'In the Plan tab, add activities with times and places (pick a place for its exact spot on the map), and set a budget to see spending day by day.',
+    body: 'In the Plan tab, add activities with times and places (pick one from the list for its exact spot on the map), and watch spending day by day.',
   },
   {
+    art: 'people',
     title: 'Bring everyone in',
-    body: 'In the People tab, share the invite link, or add guests by name if they don’t want an account. The Updates tab shows what others changed since you last looked.',
+    body: 'In the People tab, share the invite link, or add guests by name. The Updates tab shows what others changed since you last looked.',
   },
   {
+    art: 'help',
     title: 'Help is always here',
-    body: 'Find this tour, step-by-step guides and answers to common questions under Help: on your trips list, in your profile, and in each trip’s Settings tab.',
+    body: 'This tour, step-by-step guides, answers to common questions and a feedback form are under Help: on your trips list, in your profile and in each trip’s Settings.',
   },
 ];
 
@@ -128,11 +138,20 @@ export const GUIDES: Guide[] = [
   },
   {
     id: 'install',
-    title: 'Put Shareplate on your home screen',
+    title: 'Install Shareplate as an app',
     steps: [
-      'On iPhone, open the site in Safari, tap Share, then Add to Home Screen.',
-      'On Android, open it in Chrome and tap Install when it’s offered (or Menu, then Add to Home screen).',
-      'It then opens like an app, full screen.',
+      'On a computer, open it in Chrome or Edge and tap Install the app (in Help or your profile). On a Mac in Safari, choose File, then Add to Dock.',
+      'On iPhone, open the site in Safari, tap Share, then Add to Home Screen. On Android, use Chrome and tap Install.',
+      'It opens in its own window and updates by itself: there’s never anything to download. See what changed in What’s new.',
+    ],
+  },
+  {
+    id: 'feedback',
+    title: 'Send feedback',
+    steps: [
+      'Open Help (or your profile) and tap Send feedback.',
+      'Pick Idea, Problem or Question and write a few words. For a problem, say which screen and what happened.',
+      'Leave "It’s OK to email me" ticked if you’d like a reply.',
     ],
   },
 ];

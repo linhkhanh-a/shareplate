@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
+import { InstallApp } from '@/components/install-app';
 import { ProfileForm } from '@/components/profile-form';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
@@ -39,6 +40,16 @@ export default function ProfileScreen() {
           A quick tour, step-by-step guides and answers to common questions.
         </ThemedText>
         <Button label="Help and FAQ" variant="secondary" onPress={() => router.push('/help')} />
+        <Button
+          label="Send feedback"
+          variant="secondary"
+          onPress={() => router.push({ pathname: '/feedback', params: { from: '/profile' } })}
+        />
+        <Button label="What’s new" variant="quiet" onPress={() => router.push('/whats-new')} />
+      </Section>
+
+      <Section title="Install the app">
+        <InstallApp />
       </Section>
 
       <Divider />
