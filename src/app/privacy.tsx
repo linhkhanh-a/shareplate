@@ -26,7 +26,7 @@ export default function PrivacyScreen() {
 
       <Block title="What Shareplate stores">
         <Bullet>Your name, email address and profile photo from your Google account, when you sign in.</Bullet>
-        <Bullet>Your Zelle email or phone number, only if you choose to add it.</Bullet>
+        <Bullet>Your Zelle email or phone, and Venmo, PayPal.Me or Cash App names, only if you choose to add them.</Bullet>
         <Bullet>
           The trips you create or join: trip names, the people in them, bills, receipt photos, payments you record,
           itinerary plans and budgets.
@@ -35,13 +35,13 @@ export default function PrivacyScreen() {
 
       <Block title="Who can see it">
         <ThemedText>
-          Only people in the same trip. They see your name and, if you added it, your Zelle details, so they can pay
+          Only people in the same trip. They see your name and, if you added them, your payment details, so they can pay
           you back. People outside your trips can&apos;t see anything about you.
         </ThemedText>
       </Block>
 
       <Block title="What Shareplate doesn't do">
-        <Bullet>It never moves money. Payments happen in your own bank or Zelle app.</Bullet>
+        <Bullet>It never moves money. Payments happen in your own bank, Zelle, Venmo, PayPal or Cash App; payment links only open those apps with the amount filled in.</Bullet>
         <Bullet>It doesn&apos;t sell or share your information, or show ads.</Bullet>
         <Bullet>It only asks Google for your name, email and photo. It can&apos;t read your Gmail or Drive.</Bullet>
       </Block>
@@ -55,7 +55,7 @@ export default function PrivacyScreen() {
       <Block title="Leaving or deleting your data">
         <ThemedText>
           You can leave a trip once your balance in it is settled. You can delete your account yourself from your
-          profile (tap your picture, then Delete your account). That removes your profile, Zelle info and sign-in,
+          profile (tap your picture, then Delete your account). That removes your profile, payment info and sign-in,
           and deletes trips only you can see. In trips you shared with others, your past bills and payments stay so
           their totals still add up, shown under your name as a former member. For anything else, email
           linhkhanhtr.22@gmail.com.

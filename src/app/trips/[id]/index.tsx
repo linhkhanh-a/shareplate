@@ -17,7 +17,9 @@ import { leftOrOver } from '@/lib/budget';
 import { planDays } from '@/lib/itinerary';
 import { friendlyDate, tripMoney } from '@/lib/ledger';
 import { useTripLive } from '@/lib/live';
-import { peopleLine, removeMessage, zelleOf } from '@/lib/people';
+import { hasPayInfo, payNote } from '@/lib/pay-apps';
+import { payHandlesOf, peopleLine, removeMessage, zelleOf } from '@/lib/people';
+import { PayAppFields, payTexts, readPayTexts, type PayTexts } from '@/components/pay-app-fields';
 import { describeEditors } from '@/lib/presence';
 import { confirmAction, shareLink, siteUrl } from '@/lib/platform';
 import {
@@ -138,7 +140,7 @@ export default function TripScreen() {
               bills: bills.data?.length ?? 0,
               payments: payments.data?.length ?? 0,
               hasDates: !!trip.data.start_date,
-              myZelle: !!zelleOf(me),
+              myZelle: hasPayInfo(zelleOf(me), payHandlesOf(me)),
               quick,
             }}
             onTab={(next) => router.setParams({ tab: next })}
@@ -550,14 +552,8 @@ function MemberRow({
   const setRole = useSetRole(tripId);
   const remove = useRemoveMember(tripId);
   const isGuest = !member.user_id;
-  const zelle = zelleOf(member);
-  const detail = isGuest
-    ? zelle
-      ? `Guest · Zelle: ${zelle}`
-      : 'Guest, no account'
-    : zelle
-      ? `Zelle: ${zelle}`
-      : 'No Zelle info yet';
+  const pay = payNote(zelleOf(member), payHandlesOf(member));
+  const detail = isGuest ? (pay ? `Guest · ${pay}` : 'Guest, no account') : pay || 'No payment info yet';
   // Admins manage everyone else; your own role changes (stepping down) also live here.
   const manageable = canManage && !(isMe && member.role !== 'admin');
   const error = setRole.error ?? remove.error;
@@ -620,13 +616,24 @@ function MemberRow({
 function GuestZelle({ tripId, member }: { tripId: string; member: Member }) {
   const save = useSetGuestZelle(tripId);
   const [value, setValue] = useState(member.zelle_identifier ?? '');
+  const initialApps = payTexts(member);
+  const [apps, setApps] = useState<PayTexts>(initialApps);
+  const [appErrors, setAppErrors] = useState<Partial<Record<keyof PayTexts, string>>>({});
   const [saved, setSaved] = useState(false);
-  const changed = value.trim() !== (member.zelle_identifier ?? '');
+  const changed =
+    value.trim() !== (member.zelle_identifier ?? '') ||
+    (Object.keys(apps) as (keyof PayTexts)[]).some((k) => apps[k].trim() !== initialApps[k]);
 
   async function onSave() {
     setSaved(false);
+    const read = readPayTexts(apps);
+    if (!read.ok) {
+      setAppErrors(read.errors);
+      return;
+    }
+    setAppErrors({});
     try {
-      await save.mutateAsync({ memberId: member.id, zelle: value.trim() || null });
+      await save.mutateAsync({ memberId: member.id, zelle: value.trim() || null, ...read.fields });
       setSaved(true);
     } catch {
       // Shown below.
@@ -647,7 +654,16 @@ function GuestZelle({ tripId, member }: { tripId: string; member: Member }) {
         autoCapitalize="none"
         keyboardType="email-address"
       />
-      <Button variant="secondary" label="Save Zelle info" onPress={onSave} loading={save.isPending} disabled={!changed} />
+      <PayAppFields
+        value={apps}
+        onChange={(next) => {
+          setApps(next);
+          setSaved(false);
+        }}
+        errors={appErrors}
+        whose={`${member.display_name}'s`}
+      />
+      <Button variant="secondary" label="Save payment info" onPress={onSave} loading={save.isPending} disabled={!changed} />
       {saved ? <Notice tone="success">Saved.</Notice> : null}
       {save.isError ? <Notice tone="error">{friendlyError(save.error)}</Notice> : null}
     </View>

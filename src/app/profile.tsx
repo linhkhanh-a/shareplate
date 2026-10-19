@@ -99,7 +99,7 @@ function DeleteAccount() {
       ) : (
         <View style={{ gap: Spacing.two }}>
           <ThemedText type="small" themeColor="textSecondary">
-            Your profile, Zelle info and sign-in are removed. Trips that only you can see, like quick splits with guests,
+            Your profile, payment info and sign-in are removed. Trips that only you can see, like quick splits with guests,
             are deleted. In trips you share, your past bills and payments stay, so everyone else’s totals still add up,
             and you show as a former member.
           </ThemedText>
