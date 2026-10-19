@@ -527,3 +527,19 @@ instead. Feedback (idea, problem or question) is stored in a `feedback` table:
 people see only their own; owners listed in `app_admins` (added once in the
 Supabase SQL editor, never through the app) read everything in a Feedback
 inbox, with the sender's email only when they said it's OK to contact them.
+
+## 66. Bills paid in another currency
+
+A bill can be paid in a different currency from the trip's (30-plus,
+including ones without cents like JPY, KRW and VND, where "1.200" means one
+thousand two hundred). The day's rate comes from the European Central Bank
+through Frankfurter, or from ExchangeRate-API's open feed for currencies the
+ECB doesn't publish, both free with no key, through our own `fx-rate`
+function; it can be changed to what a card actually charged. Everything on the
+bill is converted to the trip's currency when it's saved, so balances,
+settling up and the database rules don't change: one total is split again on
+the converted total (equal stays equal), exact amounts are shared out in
+proportion, and bills by item convert each price, discount, tax and tip and
+spread each one like before, so everything still adds up for the bill and for
+each person. The bill keeps the currency, rate, original total and what was
+typed (`entry`), so it shows "Paid CHF 54.50" and edits in francs.

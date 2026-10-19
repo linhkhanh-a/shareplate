@@ -244,3 +244,66 @@ describe('discount, tax and tip as $ or %', () => {
     expect(c.totals?.subtotal).toBe(1235);
   });
 });
+
+describe('bills by item paid in another currency', () => {
+  const yen = (): ReceiptDraft => ({
+    ...emptyDraft({ payerId: 'linh', date: '2026-10-17' }),
+    paidIn: 'JPY',
+    rate: '0.0067',
+    items: [
+      { key: 'a', name: 'Ramen', price: '1.200', memberIds: ['linh'] },
+      { key: 'b', name: 'Gyoza', price: '600', memberIds: ['an', 'linh'] },
+    ],
+    tax: '10',
+    taxMode: 'percent',
+  });
+
+  it('reads amounts in that currency and talks in it', () => {
+    const c = checkDraft(yen());
+    expect(c.totals).toMatchObject({ subtotal: 180000, tax: 18000, total: 198000 }); // ¥1,800 + 10%
+  });
+
+  it('saves converted amounts that add up, plus what was typed', () => {
+    const d = yen();
+    const c = checkDraft(d);
+    const p = itemizedPayload(d, c.result!, { tripId: 't' });
+    expect(p.currency).toBe('JPY');
+    expect(p.fx_rate).toBe('0.0067');
+    expect(p.original_total_cents).toBe(198000);
+    expect(p.items.map((i) => i.price_cents)).toEqual([804, 402]);
+    const total = p.items.reduce((s, i) => s + i.price_cents, 0) - p.discount_cents + p.tax_cents + p.tip_cents;
+    expect(p.participants.reduce((s, x) => s + x.amount_cents, 0)).toBe(total);
+    expect(p.entry).toEqual({ prices: ['1.200', '600'], discount: '', tax: '10', tip: '' });
+  });
+
+  it('reopens showing the yen that were typed', () => {
+    const back = draftFromBill({
+      title: 'Ramen',
+      vendor: null,
+      category: 'Food',
+      bill_date: '2026-10-17',
+      paid_by_member_id: 'linh',
+      discount_cents: 0,
+      tax_cents: 121,
+      tip_cents: 0,
+      tax_rate_bp: 1000,
+      bill_image_path: null,
+      items: [
+        { name: 'Ramen', price_cents: 804, member_ids: ['linh'] },
+        { name: 'Gyoza', price_cents: 402, member_ids: ['an', 'linh'] },
+      ],
+      currency: 'JPY',
+      fx_rate: 0.0067,
+      entry: { prices: ['1.200', '600'], discount: '', tax: '10', tip: '' },
+    });
+    expect(back).toMatchObject({ paidIn: 'JPY', rate: '0.0067', tax: '10', taxMode: 'percent' });
+    expect(back.items.map((i) => i.price)).toEqual(['1.200', '600']);
+  });
+
+  it('without a usable rate, saves as the trip’s currency is not possible: no foreign rate', async () => {
+    const { foreignRate } = await import('@/lib/receipt');
+    expect(foreignRate({ paidIn: 'JPY', rate: '' })).toBeNull();
+    expect(foreignRate({ paidIn: 'JPY', rate: '0,0067' })).toEqual({ currency: 'JPY', rate: '0.0067' });
+    expect(foreignRate({ paidIn: null, rate: '1' })).toBeNull();
+  });
+});

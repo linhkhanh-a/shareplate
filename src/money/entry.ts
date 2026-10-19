@@ -111,3 +111,55 @@ export type CurrencyCode = (typeof CURRENCIES)[number]['code'];
 export function currencySymbolFor(code: string | null | undefined): string {
   return CURRENCIES.find((c) => c.code === code)?.symbol ?? '$';
 }
+
+/**
+ * Currencies a bill can be paid in (and converted from). Some have no cents
+ * in daily use (yen, won, dong): there, "1.200" means one thousand two
+ * hundred, and amounts show without decimals.
+ */
+export const PAID_CURRENCIES: { code: string; symbol: string; name: string; decimals: 0 | 2 }[] = [
+  ...CURRENCIES.map((c) => ({ ...c, decimals: 2 as const })),
+  { code: 'JPY', symbol: '¥', name: 'Japanese yen', decimals: 0 },
+  { code: 'KRW', symbol: '₩', name: 'South Korean won', decimals: 0 },
+  { code: 'VND', symbol: '₫', name: 'Vietnamese dong', decimals: 0 },
+  { code: 'IDR', symbol: 'Rp', name: 'Indonesian rupiah', decimals: 0 },
+  { code: 'TWD', symbol: 'NT$', name: 'New Taiwan dollar', decimals: 0 },
+  { code: 'HUF', symbol: 'Ft ', name: 'Hungarian forint', decimals: 0 },
+  { code: 'SEK', symbol: 'kr ', name: 'Swedish krona', decimals: 2 },
+  { code: 'NOK', symbol: 'kr ', name: 'Norwegian krone', decimals: 2 },
+  { code: 'DKK', symbol: 'kr ', name: 'Danish krone', decimals: 2 },
+  { code: 'PLN', symbol: 'zł ', name: 'Polish złoty', decimals: 2 },
+  { code: 'CZK', symbol: 'Kč ', name: 'Czech koruna', decimals: 2 },
+  { code: 'TRY', symbol: '₺', name: 'Turkish lira', decimals: 2 },
+  { code: 'BRL', symbol: 'R$', name: 'Brazilian real', decimals: 2 },
+  { code: 'ZAR', symbol: 'R ', name: 'South African rand', decimals: 2 },
+  { code: 'AED', symbol: 'AED ', name: 'UAE dirham', decimals: 2 },
+];
+
+export function paidCurrency(code: string | null | undefined) {
+  return PAID_CURRENCIES.find((c) => c.code === code) ?? null;
+}
+
+/** An amount in a given currency, e.g. "CHF 54.50", "¥1,200", "₫150,000". */
+export function formatIn(cents: Cents, code: string): string {
+  const c = paidCurrency(code);
+  if (!c) return formatCents(cents, `${code} `);
+  if (c.decimals === 2) return formatCents(cents, c.symbol);
+  const whole = Math.round(Math.abs(cents) / 100)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `${cents < 0 ? '-' : ''}${c.symbol}${whole}`;
+}
+
+/**
+ * Cleans up an amount typed in a given currency. Without cents, every dot or
+ * comma is a thousands separator ("1.200" is 1200) and the result is whole.
+ */
+export function normalizeAmountIn(text: string, code: string | null): string | null {
+  const c = code ? paidCurrency(code) : null;
+  if (!c || c.decimals === 2) return normalizeMoneyText(text);
+  const raw = text.replace(/[^\d.,-]/g, '');
+  if (!raw) return text.trim() ? null : '';
+  if (raw.includes('-') || !/^\d[\d.,]*$/.test(raw)) return null;
+  return String(Number(raw.replace(/[.,]/g, '')));
+}
