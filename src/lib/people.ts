@@ -1,4 +1,4 @@
-import type { Member, PayFields, Payment } from '@/lib/queries';
+import type { Member, Payment } from '@/lib/queries';
 import type { Cents } from '@/money';
 
 /**
@@ -66,14 +66,4 @@ export function zelleOf(member: Pick<Member, 'user_id' | 'profile' | 'zelle_iden
 export function settleTiming(endDate: string | null, today: string): 'during' | 'over' | null {
   if (!endDate) return null;
   return today > endDate ? 'over' : 'during';
-}
-
-/** Someone's Venmo, PayPal and Cash App: their own profile, or what an admin recorded for a guest. */
-export function payHandlesOf(member: Pick<Member, 'user_id' | 'profile' | 'venmo_username' | 'paypal_username' | 'cashapp_cashtag'> | undefined): PayFields {
-  const from = member?.user_id ? member.profile : member;
-  return {
-    venmo_username: from?.venmo_username || null,
-    paypal_username: from?.paypal_username || null,
-    cashapp_cashtag: from?.cashapp_cashtag || null,
-  };
 }

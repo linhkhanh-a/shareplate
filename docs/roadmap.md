@@ -88,6 +88,6 @@ link once hosting is set up, and a "try this" checklist.
 - [x] Website launch polish: app icon, link previews, add to home screen, "new version ready" banner, security headers
 - [x] Picture tour, install button, What's new page, feedback form and inbox (decision 65)
 - [x] Bills paid in another currency, with the day's exchange rate (decision 66)
-- [x] Venmo, PayPal and Cash App links with the amount filled in; "By shares" split (decision 67)
+- [x] "By shares" split (decision 67)
 - [ ] Web push notifications (new bills, payments to you, settle-up reminders)
 - [ ] iPhone app: build setup, Sign in with Apple, TestFlight (waiting on an Apple Developer account)

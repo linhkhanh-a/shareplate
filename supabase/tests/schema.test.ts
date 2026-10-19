@@ -1306,7 +1306,7 @@ describe('feedback', () => {
     );
 
   it('lets anyone signed in send feedback, and only see their own', async () => {
-    await send(LINH, 'Add Venmo links please');
+    await send(LINH, 'Add a dark mode toggle please');
     await send(AN, 'The tour is nice');
     const mine = await asUser(AN, (tx) => tx.query<{ message: string }>(`select message from feedback`));
     expect(mine.rows.map((r) => r.message)).toEqual(['The tour is nice']);
@@ -1419,58 +1419,6 @@ describe('bills paid in another currency', () => {
     );
     expect(row.currency).toBe('JPY');
     expect(Number(row.total_cents)).toBe(1608);
-  });
-});
-
-describe('Venmo, PayPal and Cash App', () => {
-  it('keeps them on profiles, and on guests only, set by an admin', async () => {
-    const { groupId, linhId, anId, guestId } = await createTrip();
-    await asUser(LINH, (tx) =>
-      tx.query(`update profiles set venmo_username = 'Linh-Bui', paypal_username = 'linhbui', cashapp_cashtag = 'linhb' where id = $1`, [LINH]),
-    );
-    await asUser(LINH, (tx) =>
-      tx.query(`update group_members set venmo_username = ' minh_t ', cashapp_cashtag = 'minht' where id = $1`, [guestId]),
-    );
-    await asUser(LINH, (tx) => tx.query(`update group_members set venmo_username = 'an-ng' where id = $1`, [anId]));
-    const rows = await asUser(AN, async (tx) =>
-      (
-        await tx.query<{ id: string; venmo_username: string | null; cashapp_cashtag: string | null; profile_venmo: string | null }>(
-          `select gm.id, gm.venmo_username, gm.cashapp_cashtag, p.venmo_username as profile_venmo
-             from group_members gm left join profiles p on p.id = gm.user_id where gm.group_id = $1`,
-          [groupId],
-        )
-      ).rows,
-    );
-    const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
-    expect(byId[guestId]).toMatchObject({ venmo_username: 'minh_t', cashapp_cashtag: 'minht' });
-    expect(byId[anId].venmo_username).toBeNull();
-    // Trip mates can see where to pay.
-    expect(byId[linhId].profile_venmo).toBe('Linh-Bui');
-
-    await expect(asUser(LINH, (tx) => tx.query(`update profiles set venmo_username = '@linh bui' where id = $1`, [LINH]))).rejects.toThrow(
-      /venmo_username_check/,
-    );
-    await expect(asUser(LINH, (tx) => tx.query(`update profiles set paypal_username = 'linh.bui' where id = $1`, [LINH]))).rejects.toThrow(
-      /paypal_username_check/,
-    );
-  });
-
-  it('records which app a payment went through', async () => {
-    const { groupId, linhId, anId } = await createTrip();
-    await asUser(LINH, (tx) =>
-      tx.query(
-        `insert into settlements (group_id, from_member_id, to_member_id, amount_cents, method) values ($1, $2, $3, 500, 'venmo')`,
-        [groupId, anId, linhId],
-      ),
-    );
-    await expect(
-      asUser(LINH, (tx) =>
-        tx.query(
-          `insert into settlements (group_id, from_member_id, to_member_id, amount_cents, method) values ($1, $2, $3, 500, 'bitcoin')`,
-          [groupId, anId, linhId],
-        ),
-      ),
-    ).rejects.toThrow(/settlements_method_check/);
   });
 });
 

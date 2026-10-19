@@ -1,66 +1,8 @@
--- Two additions:
---
--- 1. Venmo, PayPal and Cash App, alongside Zelle, as places to send someone
---    money. Like Zelle they are display only: Shareplate opens a link with
---    the amount filled in, and never sees an account or moves money. People
---    with an account keep theirs on their profile; a trip admin fills them in
---    for a guest. A recorded payment can say which app was used.
---
--- 2. A "By shares" split: each person has a number of shares (2 for a couple,
---    0.5 for a child) and the bill is split in proportion. share_input holds
---    the shares in hundredths (1 share = 100).
+-- A "By shares" split: each person has a number of shares (2 for a couple,
+-- 0.5 for a child) and the bill is split in proportion. share_input holds the
+-- shares in hundredths (1 share = 100).
 
--- Usernames only, without @ or $ (the app strips those and pasted links).
-alter table public.profiles
-  add column venmo_username text check (venmo_username is null or venmo_username ~ '^[A-Za-z0-9_-]{1,30}$'),
-  add column paypal_username text check (paypal_username is null or paypal_username ~ '^[A-Za-z0-9]{1,30}$'),
-  add column cashapp_cashtag text check (cashapp_cashtag is null or cashapp_cashtag ~ '^[A-Za-z0-9_-]{1,30}$');
 
-alter table public.group_members
-  add column venmo_username text check (venmo_username is null or venmo_username ~ '^[A-Za-z0-9_-]{1,30}$'),
-  add column paypal_username text check (paypal_username is null or paypal_username ~ '^[A-Za-z0-9]{1,30}$'),
-  add column cashapp_cashtag text check (cashapp_cashtag is null or cashapp_cashtag ~ '^[A-Za-z0-9_-]{1,30}$');
-
-comment on column public.profiles.venmo_username is 'Venmo username, without the @. Display only.';
-comment on column public.profiles.paypal_username is 'PayPal.Me name. Display only.';
-comment on column public.profiles.cashapp_cashtag is 'Cash App $Cashtag, without the $. Display only.';
-comment on column public.group_members.venmo_username is 'A guest''s Venmo username, set by a trip admin. People with an account use their profile.';
-comment on column public.group_members.paypal_username is 'A guest''s PayPal.Me name, set by a trip admin.';
-comment on column public.group_members.cashapp_cashtag is 'A guest''s Cash App $Cashtag, set by a trip admin.';
-
--- As with Zelle, only guests carry them on their place in the trip.
-create or replace function public.guest_zelle_only()
-returns trigger
-language plpgsql set search_path = public
-as $$
-begin
-  if new.user_id is not null then
-    new.zelle_identifier := null;
-    new.venmo_username := null;
-    new.paypal_username := null;
-    new.cashapp_cashtag := null;
-  else
-    new.zelle_identifier := nullif(btrim(new.zelle_identifier), '');
-    new.venmo_username := nullif(btrim(new.venmo_username), '');
-    new.paypal_username := nullif(btrim(new.paypal_username), '');
-    new.cashapp_cashtag := nullif(btrim(new.cashapp_cashtag), '');
-  end if;
-  return new;
-end;
-$$;
-
-drop trigger group_members_guest_zelle on public.group_members;
-create trigger group_members_guest_zelle
-  before insert or update of zelle_identifier, venmo_username, paypal_username, cashapp_cashtag, user_id
-  on public.group_members
-  for each row execute function public.guest_zelle_only();
-
--- Which app a payment went through.
-alter table public.settlements drop constraint settlements_method_check;
-alter table public.settlements add constraint settlements_method_check
-  check (method in ('zelle', 'venmo', 'paypal', 'cashapp', 'cash', 'other'));
-
--- "By shares".
 alter table public.bills drop constraint bills_split_mode_check;
 alter table public.bills add constraint bills_split_mode_check
   check (split_mode in ('itemized', 'equal', 'percent', 'exact', 'shares'));

@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Linking, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
@@ -12,8 +12,7 @@ import { friendlyError } from '@/lib/errors';
 import { describeEvent, timeAgo } from '@/lib/activity';
 import { friendlyDate, todayIso, tripMoney } from '@/lib/ledger';
 import { overpaid } from '@/lib/impact';
-import { METHOD_NAMES, payOptions, type PayApp } from '@/lib/pay-apps';
-import { canRemovePayment, formerWithBalance, payHandlesOf, settleTiming, zelleOf } from '@/lib/people';
+import { canRemovePayment, formerWithBalance, settleTiming, zelleOf } from '@/lib/people';
 import { confirmAction, copyText } from '@/lib/platform';
 import {
   useBills,
@@ -137,8 +136,6 @@ export default function SettleScreen() {
               leftNote={[t.fromId, t.toId].filter(left).map(name)}
               recipient={byId.get(t.toId)}
               mine={t.fromId === me?.id || t.toId === me?.id}
-              currency={trip.data?.currency ?? 'USD'}
-              tripName={trip.data?.name ?? 'Trip'}
             />
           ))}
         </View>
@@ -221,8 +218,6 @@ function TransferCard({
   leftNote,
   recipient,
   mine,
-  currency,
-  tripName,
 }: {
   tripId: string;
   transfer: Transfer;
@@ -232,18 +227,12 @@ function TransferCard({
   leftNote: string[];
   recipient?: Member;
   mine: boolean;
-  currency: string;
-  tripName: string;
 }) {
   const theme = useTheme();
   const record = useRecordPayment(tripId);
   const [copied, setCopied] = useState(false);
-  // The app you opened to pay, so Mark as paid can note it.
-  const [opened, setOpened] = useState<PayApp | null>(null);
   const zelle = zelleOf(recipient);
-  const options = payOptions(payHandlesOf(recipient), transfer.amountCents, currency, `${tripName} (Shareplate)`);
-  const paying = fromName === 'You';
-  const verb = paying ? 'pay' : 'pays';
+  const verb = fromName === 'You' ? 'pay' : 'pays';
 
   async function onPaid() {
     const ok = await confirmAction(
@@ -256,14 +245,8 @@ function TransferCard({
         from_member_id: transfer.fromId,
         to_member_id: transfer.toId,
         amount_cents: transfer.amountCents,
-        method: opened ?? undefined,
       });
     }
-  }
-
-  function openApp(app: PayApp, url: string) {
-    setOpened(app);
-    void Linking.openURL(url);
   }
 
   async function onCopy() {
@@ -302,45 +285,13 @@ function TransferCard({
           </View>
           <Button variant="quiet" label={copied ? 'Copied' : 'Copy'} onPress={onCopy} />
         </View>
-      ) : null}
-
-      {options.length > 0 && paying ? (
-        <View style={{ gap: Spacing.two }}>
-          <View style={styles.apps}>
-            {options.map((o) => (
-              <Button
-                key={o.app}
-                variant="secondary"
-                label={o.name}
-                accessibilityLabel={`Pay ${toName} ${formatCents(transfer.amountCents)} with ${o.name}, ${o.handle}`}
-                accessibilityHint="Opens the app with the amount filled in"
-                onPress={() => openApp(o.app, o.url)}
-              />
-            ))}
-          </View>
-          <ThemedText type="small" themeColor="textSecondary">
-            {opened
-              ? `Sent it in ${options.find((o) => o.app === opened)?.name}? Tap Mark as paid.`
-              : options.every((o) => o.withAmount)
-                ? 'Opens the app with the amount filled in. Shareplate never sees your account.'
-                : options.some((o) => o.withAmount)
-                  ? `Venmo and Cash App only send US dollars, so type the amount there yourself.`
-                  : 'Type the amount in the app yourself.'}
-          </ThemedText>
-        </View>
-      ) : options.length > 0 ? (
-        <ThemedText type="small" themeColor="textSecondary" selectable>
-          {`${toName === 'You' ? 'Your' : `${toName}'s`} ${options.map((o) => `${o.name} ${o.handle}`).join(' · ')}`}
-        </ThemedText>
-      ) : null}
-
-      {!zelle && options.length === 0 ? (
+      ) : (
         <ThemedText type="small" themeColor="textSecondary">
           {recipient?.user_id
-            ? `${toName} hasn't added payment info yet. Pay them however you usually do.`
-            : `${toName} is a guest with no payment info yet. A trip admin can add it under People, or pay them however you usually do.`}
+            ? `${toName} hasn't added Zelle info yet. Pay them however you usually do.`
+            : `${toName} is a guest with no Zelle info yet. A trip admin can add it under People, or pay them however you usually do.`}
         </ThemedText>
-      ) : null}
+      )}
 
       {leftNote.length > 0 ? (
         <ThemedText type="small" themeColor="textSecondary">
@@ -389,7 +340,6 @@ function PaymentRow({
           </ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
             {friendlyDate(payment.settled_on)}
-            {payment.method && ['venmo', 'paypal', 'cashapp'].includes(payment.method) ? ` · ${METHOD_NAMES[payment.method]}` : ''}
           </ThemedText>
         </View>
         <ThemedText type="money">{formatCents(payment.amount_cents)}</ThemedText>
@@ -456,7 +406,6 @@ function StrandedNotice({
 
 const styles = StyleSheet.create({
   list: { gap: Spacing.two },
-  apps: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   grow: { flex: 1, minWidth: 0 },
   card: { borderRadius: Radius.medium, padding: Spacing.three, gap: Spacing.three },
   cardTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },

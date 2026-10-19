@@ -146,27 +146,19 @@ function Settle() {
     <View style={styles.stack}>
       <Tiny strong>Settle up</Tiny>
       {[
-        ['You', 'An', '$24.00'],
+        ['An', 'You', '$24.00'],
         ['Minh', 'An', '$8.50'],
       ].map(([from, to, amount], i) => (
         <Card key={from} highlight={i === 0}>
           <View style={styles.line}>
             <Tiny>
-              {from === 'You' ? 'You pay' : `${from} pays`} {to}
+              {from} pays {to}
             </Tiny>
             <Tiny strong>{amount}</Tiny>
           </View>
-          {i === 0 ? (
-            <View style={styles.row}>
-              <Pill label="Venmo" />
-              <Pill label="PayPal" />
-              <Pill label="Cash App" />
-            </View>
-          ) : (
-            <View style={[styles.zelle, { backgroundColor: theme.surfaceMuted }]}>
-              <Tiny muted>Zelle · (614) 555-0142</Tiny>
-            </View>
-          )}
+          <View style={[styles.zelle, { backgroundColor: theme.surfaceMuted }]}>
+            <Tiny muted>Zelle · (614) 555-0142</Tiny>
+          </View>
           <View style={[styles.button, { borderColor: theme.border }]}>
             <Tiny strong>Mark as paid</Tiny>
           </View>
