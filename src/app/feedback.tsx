@@ -54,12 +54,9 @@ export default function FeedbackScreen() {
         )
       }>
       <TopBar />
-      <View style={{ gap: Spacing.one }}>
-        <ThemedText type="title" accessibilityRole="header">
-          Send feedback
-        </ThemedText>
-        <ThemedText themeColor="textSecondary">Ideas, problems and questions all help. Every message is read.</ThemedText>
-      </View>
+      <ThemedText type="title" accessibilityRole="header">
+        Send feedback
+      </ThemedText>
 
       {sent ? (
         <>
@@ -101,7 +98,8 @@ export default function FeedbackScreen() {
 }
 
 const styles = StyleSheet.create({
-  message: { minHeight: 140, textAlignVertical: 'top' },
+  // Room between the box's edge and the text, like the one-line fields have side to side.
+  message: { minHeight: 140, textAlignVertical: 'top', paddingTop: Spacing.three, paddingBottom: Spacing.three },
   check: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, minHeight: 44 },
   grow: { flex: 1, minWidth: 0 },
 });
