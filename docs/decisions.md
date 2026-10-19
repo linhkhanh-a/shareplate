@@ -501,3 +501,14 @@ settings: after typing the trip's name, every bill and payment is cleared in
 one step (people, the plan and settings stay), shown as a single line in
 What's new. We don't delete payments along with a bill, since real money moved,
 and we don't lock settled bills.
+
+## 64. A tour, "Getting started" and a Help page
+
+New people get a six-card tour the first time they reach their trips (Skip
+anytime; remembered on the device). Each new trip shows a "Getting started"
+list on the Bills tab (invite people, add your Zelle info, add the first bill,
+set dates and plan, settle up) that ticks itself off as things happen and goes
+away once someone pays, or when hidden. A Help page, reachable from the trips
+list, the profile and each trip's Settings tab, has the tour again, a
+step-by-step guide for every feature and common questions, searchable. All the
+words live in `src/lib/help.ts`, so the tour, guides and FAQ stay consistent.

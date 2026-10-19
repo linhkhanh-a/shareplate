@@ -4,6 +4,7 @@ import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { BudgetBar } from '@/components/budget-bar';
+import { GettingStarted } from '@/components/getting-started';
 import { LiveBadge } from '@/components/live-badge';
 import { TopBar } from '@/components/top-bar';
 import { Avatar, Button, Chip, ChipGroup, Divider, Loading, Notice, Pill, Screen, Section, Tabs, TextField } from '@/components/ui';
@@ -130,6 +131,18 @@ export default function TripScreen() {
 
       {tab === 'bills' ? (
         <>
+          <GettingStarted
+            tripId={id}
+            input={{
+              activePeople: active.length,
+              bills: bills.data?.length ?? 0,
+              payments: payments.data?.length ?? 0,
+              hasDates: !!trip.data.start_date,
+              myZelle: !!zelleOf(me),
+              quick,
+            }}
+            onTab={(next) => router.setParams({ tab: next })}
+          />
           <Section title="Bills">
             {bills.isPending ? <Loading /> : null}
             {bills.isError ? <Notice tone="error">{friendlyError(bills.error)}</Notice> : null}
@@ -196,6 +209,7 @@ export default function TripScreen() {
 
       {tab === 'settings' ? (
         <>
+          <Button variant="secondary" label="Help and FAQ" onPress={() => router.push('/help')} />
           {isAdmin ? (
             <TripSettings trip={trip.data} />
           ) : (

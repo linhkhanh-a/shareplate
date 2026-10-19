@@ -3,11 +3,14 @@ import { useCallback } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { InstallHint } from '@/components/install-hint';
+import { Tour } from '@/components/tour';
 import { ThemedText } from '@/components/themed-text';
 import { Avatar, Button, Loading, Notice, Pill, Screen } from '@/components/ui';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useAuth } from '@/lib/auth';
 import { friendlyError } from '@/lib/errors';
+import { useFirstRunTour } from '@/lib/tour';
 import { useProfile, useTrips, useUnreadCounts, type TripSummary } from '@/lib/queries';
 
 export default function TripsScreen() {
@@ -22,6 +25,7 @@ export default function TripsScreen() {
     }, [refetchUnread]),
   );
   const name = profile.data?.full_name || profile.data?.email || '';
+  const tour = useFirstRunTour(useAuth().session?.user.id);
 
   return (
     <Screen footer={<Button label="New trip" onPress={() => router.push('/trips/new')} />}>
@@ -29,13 +33,16 @@ export default function TripsScreen() {
         <ThemedText type="title" accessibilityRole="header">
           Your trips
         </ThemedText>
-        <Pressable
-          accessibilityRole="link"
-          accessibilityLabel="Your profile"
-          hitSlop={8}
-          onPress={() => router.push('/profile')}>
-          <Avatar name={name} size={40} />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Button variant="quiet" label="Help" accessibilityLabel="Help and FAQ" onPress={() => router.push('/help')} />
+          <Pressable
+            accessibilityRole="link"
+            accessibilityLabel="Your profile"
+            hitSlop={8}
+            onPress={() => router.push('/profile')}>
+            <Avatar name={name} size={40} />
+          </Pressable>
+        </View>
       </View>
 
       {trips.isPending ? <Loading /> : null}
@@ -55,6 +62,9 @@ export default function TripsScreen() {
       </View>
 
       <InstallHint />
+
+      {/* The first time someone gets here, a short tour of what Shareplate does. */}
+      <Tour visible={tour.show} onClose={tour.done} />
     </Screen>
   );
 }
@@ -88,6 +98,7 @@ function TripRow({ summary, unread }: { summary: TripSummary; unread: number }) 
 
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   list: { gap: Spacing.two },
   row: {
     flexDirection: 'row',

@@ -94,6 +94,7 @@ function RootNavigator() {
         {/* Open to everyone: invite links work before signing in. */}
         <Stack.Screen name="join" />
         <Stack.Screen name="privacy" />
+        <Stack.Screen name="help" />
       </Stack>
       <UpdateBanner />
       <AppDialogHost />
