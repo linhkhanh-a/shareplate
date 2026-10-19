@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { BillEndActions, returnToTrip } from '@/components/bill-end-actions';
 import { DateField } from '@/components/date-field';
+import { PaidIn } from '@/components/paid-in';
 import { FormerOnBillNotice } from '@/components/former-on-bill';
 import { PlanPicker } from '@/components/plan-picker';
 import { TopBar } from '@/components/top-bar';
@@ -28,6 +29,7 @@ import { friendlyError } from '@/lib/errors';
 import {
   CATEGORIES,
   computeSplit,
+  convertSplit,
   isValidIsoDate,
   shareInputText,
   todayIso,
@@ -37,18 +39,20 @@ import {
 import { useTripLive } from '@/lib/live';
 import { dateChoices } from '@/lib/dates';
 import { withShares } from '@/lib/impact';
+import { foreignRate } from '@/lib/receipt';
 import { useBillImpact } from '@/lib/use-bill-impact';
 import { formerOnBill } from '@/lib/people';
 import { confirmAction } from '@/lib/platform';
 import { describeEditors } from '@/lib/presence';
 import { useBills, useMembers, usePinBill, useSaveBill, useTrip, type Bill, type Member } from '@/lib/queries';
-import { centsToText, currencySymbol, formatCents, normalizeMoneyText, normalizePercentText } from '@/money';
+import { centsToText, currencySymbol, formatCents, formatIn, normalizeAmountIn, normalizePercentText, paidCurrency, parseShares, sharesText } from '@/money';
 
 /** Back to the trip, even when the bill was opened directly from a link. */
 const MODES: { value: ManualMode; label: string }[] = [
   { value: 'equal', label: 'Equally' },
   { value: 'percent', label: 'By percent' },
   { value: 'exact', label: 'Exact amounts' },
+  { value: 'shares', label: 'By shares' },
 ];
 
 export default function BillScreen() {
@@ -153,8 +157,16 @@ function BillForm({
   const initialMode: ManualMode =
     existing && existing.split_mode !== 'itemized' ? (existing.split_mode as ManualMode) : 'equal';
 
+  // Paid in another currency: what was typed in it is kept with the bill.
+  const typedBefore = existing?.currency
+    ? (existing.entry as { amount?: unknown; inputs?: Record<string, unknown> } | null | undefined)
+    : null;
   const [title, setTitle] = useState(existing?.title ?? '');
-  const [amount, setAmount] = useState(existing ? centsToText(existing.total_cents) : '');
+  const [amount, setAmount] = useState(
+    typeof typedBefore?.amount === 'string' ? typedBefore.amount : existing ? centsToText(existing.total_cents) : '',
+  );
+  const [paidIn, setPaidIn] = useState<string | null>(existing?.currency ?? null);
+  const [rate, setRate] = useState(existing?.fx_rate ? String(existing.fx_rate) : '');
   const [payer, setPayer] = useState(existing?.paid_by_member_id ?? myMemberId ?? people[0]?.id ?? '');
   const [date, setDate] = useState(existing?.bill_date ?? todayIso());
   const [category, setCategory] = useState(existing?.category ?? 'Food');
@@ -165,7 +177,12 @@ function BillForm({
       return {
         memberId: m.id,
         included: existing ? !!share : !m.left_at,
-        input: share ? shareInputText(initialMode, share.share_input) : '',
+        input:
+          typeof typedBefore?.inputs?.[m.id] === 'string'
+            ? (typedBefore.inputs[m.id] as string)
+            : share
+              ? shareInputText(initialMode, share.share_input)
+              : '',
       };
     }),
   );
@@ -174,8 +191,8 @@ function BillForm({
   const dateOptions = dateChoices(trip.data?.start_date ?? null, trip.data?.end_date ?? null);
 
   // Ask before leaving with unsaved changes.
-  const [startState] = useState(() => JSON.stringify({ title, amount, payer, date, category, mode, rows }));
-  const dirty = JSON.stringify({ title, amount, payer, date, category, mode, rows }) !== startState;
+  const [startState] = useState(() => JSON.stringify({ title, amount, payer, date, category, mode, rows, paidIn, rate }));
+  const dirty = JSON.stringify({ title, amount, payer, date, category, mode, rows, paidIn, rate }) !== startState;
   const [left, setLeft] = useState(false);
   const allowLeave = usePreventRemove(dirty && !left, ({ repeat }) => {
     confirmAction('Leave this bill?', "What you typed won't be saved.", 'Leave').then((ok) => {
@@ -189,9 +206,22 @@ function BillForm({
     allowLeave();
   }
 
-  const split = computeSplit(mode, amount, rows);
+  // Typed in the currency it was paid in, then converted to the trip's for everyone's shares.
+  const tripCurrency = trip.data?.currency ?? 'USD';
+  const fmtPaid = (cents: number) => (paidIn ? formatIn(cents, paidIn) : formatCents(cents));
+  const clean = (text: string) => (paidIn ? (normalizeAmountIn(text, paidIn) ?? text) : text);
+  const split = computeSplit(
+    mode,
+    clean(amount),
+    mode === 'exact' ? rows.map((r) => ({ ...r, input: clean(r.input) })) : rows,
+    fmtPaid,
+  );
+  const fx = paidIn ? foreignRate({ paidIn, rate }) : null;
+  const finalShares = !split.ok ? null : paidIn ? (fx ? convertSplit(mode, split.shares, fx.rate) : null) : split.shares;
+  const finalTotal = finalShares ? finalShares.reduce((sum, s) => sum + s.amountCents, 0) : 0;
   const dateOk = isValidIsoDate(date);
-  const shareFor = (memberId: string) => (split.ok ? split.shares.find((s) => s.memberId === memberId) : undefined);
+  // What each person owes, in the trip's currency.
+  const shareFor = (memberId: string) => finalShares?.find((s) => s.memberId === memberId);
   const nameOf = (memberId: string) => people.find((m) => m.id === memberId)?.display_name ?? 'Someone';
 
   function updateRow(memberId: string, change: Partial<SplitRow>) {
@@ -206,10 +236,10 @@ function BillForm({
 
   async function onSave() {
     setAttempted(true);
-    if (!split.ok || !dateOk || !payer) return;
+    if (!split.ok || !dateOk || !payer || !finalShares) return;
     // Once people have paid, an edit can mean money going back: say so first.
     if (existing && impact.hasPayments) {
-      const preview = impact.describe(existing.id, withShares(existing, payer, split.shares));
+      const preview = impact.describe(existing.id, withShares(existing, payer, finalShares));
       if (preview && preview.changes > 0 && !(await confirmAction('Save these changes?', preview.text, 'Save changes'))) return;
     }
     let savedId: string;
@@ -222,13 +252,17 @@ function BillForm({
         title: title.trim(),
         category,
         split_mode: mode,
-        total_cents: split.shares.reduce((sum, s) => sum + s.amountCents, 0),
+        total_cents: finalTotal,
         bill_date: date,
-        participants: split.shares.map((s) => ({
+        participants: finalShares.map((s) => ({
           member_id: s.memberId,
           share_input: s.shareInput,
           amount_cents: s.amountCents,
         })),
+        currency: fx ? fx.currency : null,
+        fx_rate: fx ? fx.rate : null,
+        original_total_cents: fx ? split.shares.reduce((sum, s) => sum + s.amountCents, 0) : null,
+        entry: fx ? { amount, inputs: Object.fromEntries(rows.map((r) => [r.memberId, r.input])) } : null,
       });
     } catch {
       // Shown below from save.error.
@@ -250,6 +284,7 @@ function BillForm({
         <Notice tone="error">{`The bill is saved, but pinning it to the plan didn't work. ${friendlyError(pin.error)}`}</Notice>
       ) : null}
       {attempted && !split.ok ? <Notice tone="error">{split.message}</Notice> : null}
+      {attempted && split.ok && paidIn && !fx ? <Notice tone="error">Enter the exchange rate for {paidIn}.</Notice> : null}
       <Button label={existing ? 'Save changes' : 'Add bill'} onPress={onSave} loading={save.isPending} />
     </View>
   ) : undefined;
@@ -312,13 +347,15 @@ function BillForm({
       <View style={styles.amountBlock}>
         <ThemedText type="strong">Amount</ThemedText>
         <View style={[styles.amountBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <ThemedText style={[styles.amountText, { color: theme.textSecondary }]}>{currencySymbol().trim()}</ThemedText>
+          <ThemedText style={[styles.amountText, { color: theme.textSecondary }]}>
+            {(paidIn ? (paidCurrency(paidIn)?.symbol ?? paidIn) : currencySymbol()).trim()}
+          </ThemedText>
           <TextInput
             accessibilityLabel="Amount"
             value={amount}
             onChangeText={(t) => setAmount(t.replace(/[^0-9.,]/g, ''))}
             // Rounded to the cent as soon as you leave the box, so what you see is what's saved.
-            onBlur={() => setAmount((a) => normalizeMoneyText(a) ?? a)}
+            onBlur={() => setAmount((a) => normalizeAmountIn(a, paidIn) ?? a)}
             placeholder="0.00"
             placeholderTextColor={theme.textSecondary}
             keyboardType="decimal-pad"
@@ -328,6 +365,23 @@ function BillForm({
           />
         </View>
       </View>
+
+      <PaidIn
+        tripCurrency={tripCurrency}
+        paidIn={paidIn}
+        rate={rate}
+        date={date}
+        editable={editable}
+        onChange={(next) => {
+          setPaidIn(next.paidIn);
+          setRate(next.rate);
+        }}
+      />
+      {paidIn && split.ok && finalShares ? (
+        <ThemedText type="small" themeColor="textSecondary">
+          {`${formatIn(split.shares.reduce((sum, x) => sum + x.amountCents, 0), paidIn)} = ${formatCents(finalTotal)} in ${tripCurrency}. Everyone's share below is in ${tripCurrency}.`}
+        </ThemedText>
+      ) : null}
 
       <ChipGroup label="Paid by">
         {people
@@ -376,17 +430,28 @@ function BillForm({
                 </Pressable>
                 {mode !== 'equal' && row.included ? (
                   <View style={[styles.shareInput, { borderColor: theme.border, backgroundColor: theme.background }]}>
-                    {mode === 'exact' ? <ThemedText themeColor="textSecondary">{currencySymbol().trim()}</ThemedText> : null}
+                    {mode === 'exact' ? (
+                      <ThemedText themeColor="textSecondary">
+                        {(paidIn ? (paidCurrency(paidIn)?.symbol ?? paidIn) : currencySymbol()).trim()}
+                      </ThemedText>
+                    ) : null}
                     <TextInput
-                      accessibilityLabel={`${m.display_name}'s ${mode === 'percent' ? 'percentage' : 'amount'}`}
+                      accessibilityLabel={`${m.display_name}'s ${mode === 'percent' ? 'percentage' : mode === 'shares' ? 'shares' : 'amount'}`}
                       value={row.input}
                       onChangeText={(t) => updateRow(m.id, { input: t.replace(/[^0-9.,]/g, '') })}
                       onBlur={() => {
-                        const normal = mode === 'percent' ? normalizePercentText(row.input) : normalizeMoneyText(row.input);
+                        const normal =
+                          mode === 'percent'
+                            ? normalizePercentText(row.input)
+                            : mode === 'shares'
+                              ? row.input.trim() && parseShares(row.input) !== null
+                                ? sharesText(parseShares(row.input)!)
+                                : null
+                              : normalizeAmountIn(row.input, paidIn);
                         if (normal !== null && normal !== row.input) updateRow(m.id, { input: normal });
                       }}
                       // Left blank, it shows the rest of the bill in grey: that's filled in automatically.
-                      placeholder={split.auto[m.id] ?? (mode === 'percent' ? '0' : '0.00')}
+                      placeholder={split.auto[m.id] ?? (mode === 'percent' ? '0' : mode === 'shares' ? '1' : '0.00')}
                       placeholderTextColor={theme.textSecondary}
                       keyboardType="decimal-pad"
                       inputMode="decimal"
@@ -394,6 +459,11 @@ function BillForm({
                       style={[styles.shareInputText, { color: theme.text }]}
                     />
                     {mode === 'percent' ? <ThemedText themeColor="textSecondary">%</ThemedText> : null}
+                    {mode === 'shares' ? (
+                      <ThemedText type="small" themeColor="textSecondary">
+                        {row.input.trim() === '1' || (!row.input.trim() && split.auto[m.id] === '1') ? 'share' : 'shares'}
+                      </ThemedText>
+                    ) : null}
                   </View>
                 ) : null}
                 {mode !== 'equal' && row.included && split.auto[m.id] !== undefined ? (
@@ -416,7 +486,9 @@ function BillForm({
         </ThemedText>
         {mode !== 'equal' ? (
           <ThemedText type="small" themeColor="textSecondary">
-            Leave someone blank and they get whatever is left, shown in grey.
+            {mode === 'shares'
+              ? 'Give each person a number of shares, like 2 for a couple or 0.5 for a child. Blank means 1 share.'
+              : 'Leave someone blank and they get whatever is left, shown in grey.'}
           </ThemedText>
         ) : null}
       </Section>

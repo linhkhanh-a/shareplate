@@ -86,9 +86,19 @@ export const GUIDES: Guide[] = [
     title: 'Type a bill in',
     steps: [
       'Tap Add bill, then One total (just the amount) or By item (each dish).',
-      'One total: choose Equally, By percent or Exact amounts. Leave someone blank and they get what’s left, shown in grey as "auto".',
+      'One total: choose Equally, By percent, Exact amounts or By shares. Leave someone blank and they get what’s left, shown in grey as "auto".',
+      'By shares: give each person a number of shares, like 2 for a couple or 0.5 for a child. Blank means 1 share.',
       'By item: add each item and price. Discount, tax and tip can each be in $ or %.',
       'Amounts round to the cent when you leave the box, so what you see is what’s saved.',
+    ],
+  },
+  {
+    id: 'currency',
+    title: 'Add a bill paid in another currency',
+    steps: [
+      'On the bill, under Paid in, tap Other currency and pick it (for example JPY or CHF).',
+      'Type the amount as it was charged. The day’s exchange rate fills in by itself; change it if your card charged a different rate.',
+      'Everyone’s share is worked out in the trip’s currency. The bill list shows what was paid, like "Paid CHF 54.50".',
     ],
   },
   {
@@ -180,6 +190,10 @@ export const FAQ: Faq[] = [
     a: 'Everything is counted in whole cents. When a bill doesn’t split evenly, the leftover cents go one at a time to the people closest to the next cent, so shares always add up exactly to the total and nobody is off by more than 1 cent.',
   },
   {
+    q: 'What’s By shares?',
+    a: 'A way to split a bill unevenly without doing the math: give each person a number of shares, like 2 for a couple, 1 each for everyone else and 0.5 for a child. The bill is split in proportion, to the cent. Anyone left blank has 1 share.',
+  },
+  {
     q: 'What does "auto" mean next to someone’s share?',
     a: 'In By percent or Exact amounts, anyone you leave blank gets what’s left of the bill, split equally if several are blank. Type over it to set it yourself.',
   },
@@ -208,8 +222,12 @@ export const FAQ: Faq[] = [
     a: 'Either works. Settling early is fine: bills added later just create new, smaller payments. After the trip’s last day, Settle up reminds everyone it’s time.',
   },
   {
-    q: 'Can I use a different currency?',
-    a: 'Yes, an admin can choose the trip’s currency in Settings (EUR, GBP, CHF and more). It only changes the sign; nothing is converted. Currencies without cents, like VND or JPY, aren’t supported yet.',
+    q: 'Can I add a bill paid in another currency?',
+    a: 'Yes. On any bill, tap Paid in, then Other currency, and type the amount as it was charged (yen, francs, dong…). Shareplate fills in the day’s exchange rate from the European Central Bank (or an open feed for currencies it doesn’t publish), and you can change it to what your card actually charged. Everyone’s share is converted to the trip’s currency; the bill still shows what was paid.',
+  },
+  {
+    q: 'Can the whole trip use a different currency?',
+    a: 'Yes, an admin can choose the trip’s currency in Settings (EUR, GBP, CHF and more). It only changes the sign of what’s already there; nothing is converted. Bills paid in other currencies are converted into it.',
   },
   {
     q: 'What if I leave a bill halfway?',

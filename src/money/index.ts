@@ -18,19 +18,28 @@ export {
   centsToText,
   CURRENCIES,
   currencySymbolFor,
+  formatIn,
+  normalizeAmountIn,
   normalizeMoneyText,
   normalizePercentText,
+  PAID_CURRENCIES,
+  paidCurrency,
   parseMoneyText,
   type CurrencyCode,
 } from './entry';
 export {
   FULL_PERCENT_BP,
+  ONE_SHARE,
   parsePercentToBasisPoints,
+  parseShares,
+  sharesText,
   splitByPercent,
+  splitByShares,
   splitEqual,
   splitExact,
   type MemberId,
   type PercentInput,
+  type SharesInput,
   type Share,
 } from './splits';
 export {
@@ -49,3 +58,4 @@ export {
   type SettlementForBalance,
 } from './balances';
 export { simplifyDebts, type Transfer } from './simplify';
+export { convertCents, convertItemized, convertShares, formatRate, scaledRate, type ConvertedMember } from './fx';

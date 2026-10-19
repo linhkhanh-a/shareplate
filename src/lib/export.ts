@@ -2,7 +2,7 @@ import type { Activity } from '@/lib/itinerary';
 import type { Bill, BillItem, Member, Payment } from '@/lib/queries';
 import { tripSummary } from '@/lib/summary';
 import type { Cell, Sheet } from '@/lib/xlsx';
-import type { Cents } from '@/money';
+import { formatIn, type Cents } from '@/money';
 
 export interface ExportInput {
   tripName: string;
@@ -18,6 +18,7 @@ const MODE_NAMES: Record<string, string> = {
   equal: 'Equally',
   percent: 'By percent',
   exact: 'Exact amounts',
+  shares: 'By shares',
   itemized: 'By item',
 };
 
@@ -36,9 +37,9 @@ export function exportSheets(input: ExportInput): Sheet[] {
 
   const billSheet: Sheet = {
     name: 'Bills',
-    widths: [12, 28, 12, 16, 11, 11, 10, 10, 11, 14, 22, ...people.map(() => 14)],
+    widths: [12, 28, 12, 16, 11, 11, 10, 10, 11, 16, 14, 22, ...people.map(() => 14)],
     rows: [
-      ['Date', 'What', 'Category', 'Paid by', 'Subtotal', 'Discount', 'Tax', 'Tip', 'Total', 'Split', 'Plan', ...people.map((p) => p.name)],
+      ['Date', 'What', 'Category', 'Paid by', 'Subtotal', 'Discount', 'Tax', 'Tip', 'Total', 'Paid in', 'Split', 'Plan', ...people.map((p) => p.name)],
       ...byDate.map((b): Cell[] => [
         { date: b.bill_date },
         b.title || b.vendor || b.category,
@@ -49,6 +50,8 @@ export function exportSheets(input: ExportInput): Sheet[] {
         money(b.tax_cents),
         money(b.tip_cents),
         money(b.total_cents),
+        // Paid in another currency: what was actually paid (the rest of the row is converted).
+        b.currency && b.original_total_cents ? `${formatIn(b.original_total_cents, b.currency)} at ${b.fx_rate}` : '',
         MODE_NAMES[b.split_mode] ?? b.split_mode,
         b.itinerary_item_id ? (plan.get(b.itinerary_item_id) ?? '') : '',
         ...people.map((p) => {

@@ -62,3 +62,22 @@ describe('currency', () => {
     expect(formatCents(-500)).toBe('-$5.00');
   });
 });
+
+describe('amounts in the currency a bill was paid in', () => {
+  it('shows yen and dong without decimals, others with', async () => {
+    const { formatIn } = await import('@/money');
+    expect(formatIn(120000, 'JPY')).toBe('¥1,200');
+    expect(formatIn(15000000, 'VND')).toBe('₫150,000');
+    expect(formatIn(5450, 'CHF')).toBe('CHF 54.50');
+    expect(formatIn(5450, 'XYZ')).toBe('XYZ 54.50');
+  });
+
+  it('reads dots and commas as thousands in currencies without cents', async () => {
+    const { normalizeAmountIn } = await import('@/money');
+    expect(normalizeAmountIn('1.200', 'JPY')).toBe('1200');
+    expect(normalizeAmountIn('150,000 ₫', 'VND')).toBe('150000');
+    expect(normalizeAmountIn('12.5', 'CHF')).toBe('12.50');
+    expect(normalizeAmountIn('12.345', null)).toBe('12.35');
+    expect(normalizeAmountIn('abc', 'JPY')).toBeNull();
+  });
+});

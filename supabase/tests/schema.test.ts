@@ -1306,7 +1306,7 @@ describe('feedback', () => {
     );
 
   it('lets anyone signed in send feedback, and only see their own', async () => {
-    await send(LINH, 'Add Venmo links please');
+    await send(LINH, 'Add a dark mode toggle please');
     await send(AN, 'The tour is nice');
     const mine = await asUser(AN, (tx) => tx.query<{ message: string }>(`select message from feedback`));
     expect(mine.rows.map((r) => r.message)).toEqual(['The tour is nice']);
@@ -1339,5 +1339,108 @@ describe('feedback', () => {
     // An isn't an admin: can't change anyone's.
     const notMine = await asUser(AN, async (tx) => (await tx.query(`update feedback set status = 'new' returning id`)).rows.length);
     expect(notMine).toBe(0);
+  });
+});
+
+describe('bills paid in another currency', () => {
+  it('keeps the converted amounts for balances, and what was paid for showing', async () => {
+    const { groupId, linhId, anId } = await createTrip();
+    const bill = {
+      group_id: groupId,
+      paid_by_member_id: linhId,
+      title: 'Fondue',
+      split_mode: 'equal',
+      // CHF 54.50 at 1.1235 = $61.23
+      total_cents: 6123,
+      currency: 'CHF',
+      fx_rate: '1.1235',
+      original_total_cents: 5450,
+      entry: { amount: '54.50' },
+      participants: [
+        { member_id: linhId, amount_cents: 3062 },
+        { member_id: anId, amount_cents: 3061 },
+      ],
+    };
+    const id = await asUser(LINH, async (tx) => (await tx.query<{ id: string }>(`select save_bill($1::jsonb) as id`, [JSON.stringify(bill)])).rows[0].id);
+    const row = await asUser(LINH, async (tx) =>
+      (await tx.query<{ currency: string; fx_rate: string; original_total_cents: string; entry: { amount: string } }>(
+        `select currency, fx_rate, original_total_cents, entry from bills where id = $1`,
+        [id],
+      )).rows[0],
+    );
+    expect(row.currency).toBe('CHF');
+    expect(Number(row.fx_rate)).toBeCloseTo(1.1235);
+    expect(Number(row.original_total_cents)).toBe(5450);
+    expect(row.entry).toEqual({ amount: '54.50' });
+    expect(await balances(LINH, groupId)).toMatchObject({ An: -3061, Linh: 3061 });
+
+    // Back to the trip's currency: the foreign details are cleared.
+    await asUser(LINH, (tx) =>
+      tx.query(`select save_bill($1::jsonb)`, [
+        JSON.stringify({ ...bill, id, expected_version: 1, currency: null, fx_rate: null, original_total_cents: null, entry: null }),
+      ]),
+    );
+    const plain = await asUser(LINH, async (tx) => (await tx.query<{ currency: string | null }>(`select currency from bills where id = $1`, [id])).rows[0]);
+    expect(plain.currency).toBeNull();
+
+    // A currency without its rate is refused.
+    await expect(
+      asUser(LINH, (tx) => tx.query(`select save_bill($1::jsonb)`, [JSON.stringify({ ...bill, fx_rate: null })])),
+    ).rejects.toThrow(/bills_currency_complete/);
+  });
+
+  it('works for bills by item too', async () => {
+    const { groupId, linhId, anId } = await createTrip();
+    const id = await asUser(LINH, async (tx) =>
+      (
+        await tx.query<{ id: string }>(`select save_itemized_bill($1::jsonb) as id`, [
+          JSON.stringify({
+            group_id: groupId,
+            paid_by_member_id: linhId,
+            title: 'Ramen',
+            currency: 'JPY',
+            fx_rate: '0.0067',
+            original_total_cents: 240000,
+            entry: { items: ['1200', '1200'] },
+            items: [
+              { name: 'Ramen', price_cents: 804, member_ids: [linhId] },
+              { name: 'Gyoza', price_cents: 804, member_ids: [anId] },
+            ],
+            participants: [
+              { member_id: linhId, items_cents: 804, amount_cents: 804 },
+              { member_id: anId, items_cents: 804, amount_cents: 804 },
+            ],
+          }),
+        ])
+      ).rows[0].id,
+    );
+    const row = await asUser(LINH, async (tx) =>
+      (await tx.query<{ currency: string; total_cents: string }>(`select currency, total_cents from bills where id = $1`, [id])).rows[0],
+    );
+    expect(row.currency).toBe('JPY');
+    expect(Number(row.total_cents)).toBe(1608);
+  });
+});
+
+describe('split by shares', () => {
+  it('saves a bill by shares, and needs everyone on it to have some', async () => {
+    const { groupId, linhId, anId, guestId } = await createTrip();
+    const bill = {
+      group_id: groupId,
+      paid_by_member_id: linhId,
+      title: 'Villa',
+      split_mode: 'shares',
+      total_cents: 10000,
+      participants: [
+        { member_id: linhId, share_input: 200, amount_cents: 5000 },
+        { member_id: anId, share_input: 100, amount_cents: 2500 },
+        { member_id: guestId, share_input: 100, amount_cents: 2500 },
+      ],
+    };
+    await asUser(LINH, (tx) => tx.query(`select save_bill($1::jsonb)`, [JSON.stringify(bill)]));
+    expect(await balances(LINH, groupId)).toMatchObject({ Linh: 5000, An: -2500 });
+
+    const zero = { ...bill, participants: [...bill.participants.slice(0, 2), { member_id: guestId, share_input: 0, amount_cents: 2500 }] };
+    await expect(asUser(LINH, (tx) => tx.query(`select save_bill($1::jsonb)`, [JSON.stringify(zero)]))).rejects.toThrow(/SHARES_MISSING/);
   });
 });

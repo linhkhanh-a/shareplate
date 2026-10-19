@@ -422,3 +422,6 @@ verify_jwt = false
 # Checks the sign-in itself, like the receipt reader.
 [functions.place-search]
 verify_jwt = false
+
+[functions.fx-rate]
+verify_jwt = false

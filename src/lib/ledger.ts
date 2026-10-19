@@ -1,13 +1,19 @@
 import {
   allocate,
   centsToText,
+  convertCents,
+  convertShares,
   computeBalances,
   FULL_PERCENT_BP,
   formatCents,
   normalizePercentText,
+  ONE_SHARE,
   parseMoneyText,
   parsePercentToBasisPoints,
+  parseShares,
+  sharesText,
   simplifyDebts,
+  splitByShares,
   splitByPercent,
   splitEqual,
   splitExact,
@@ -18,19 +24,19 @@ import {
 
 import type { Bill, Payment } from '@/lib/queries';
 
-export type ManualMode = 'equal' | 'percent' | 'exact';
+export type ManualMode = 'equal' | 'percent' | 'exact' | 'shares';
 
 export interface SplitRow {
   memberId: string;
   included: boolean;
-  /** What was typed: a percentage ("33.33") or an amount ("12.50"). Unused for equal splits. */
+  /** What was typed: a percentage ("33.33"), an amount ("12.50") or a number of shares ("2"). Unused for equal splits. */
   input: string;
 }
 
 export interface ComputedShare {
   memberId: string;
   amountCents: Cents;
-  /** Basis points for percent splits, cents for exact splits, null for equal. */
+  /** Basis points for percent splits, cents for exact splits, hundredths of a share for shares, null for equal. */
   shareInput: number | null;
 }
 
@@ -42,12 +48,20 @@ export type SplitResult =
  * Works out everyone's share as the bill is being typed, using the money
  * engine, and explains what's missing when the numbers don't add up yet.
  *
+ * In "By shares", anyone left blank has 1 share.
+ *
  * In "By percent" and "Exact amounts", anyone left blank gets the rest
  * automatically (split equally if several are blank, to the exact cent or
  * hundredth of a percent). `auto` holds what was filled in, by person, so the
  * screen can show it in grey.
  */
-export function computeSplit(mode: ManualMode, totalText: string, rows: SplitRow[]): SplitResult {
+export function computeSplit(
+  mode: ManualMode,
+  totalText: string,
+  rows: SplitRow[],
+  /** How amounts are written in the messages: the trip's currency, or the one the bill was paid in. */
+  fmt: (cents: Cents) => string = formatCents,
+): SplitResult {
   const none = {} as Record<string, string>;
   let total: Cents;
   try {
@@ -68,13 +82,38 @@ export function computeSplit(mode: ManualMode, totalText: string, rows: SplitRow
     return {
       ok: true,
       shares: shares.map((s) => ({ ...s, shareInput: null })),
-      status: `${formatCents(total)} split ${included.length} ${included.length === 1 ? 'way' : 'ways'}`,
+      status: `${fmt(total)} split ${included.length} ${included.length === 1 ? 'way' : 'ways'}`,
       auto: none,
     };
   }
 
   const typed = included.filter((r) => r.input.trim());
   const blank = included.filter((r) => !r.input.trim());
+
+  if (mode === 'shares') {
+    const auto: Record<string, string> = {};
+    const inputs: { memberId: string; shares: number }[] = [];
+    for (const r of included) {
+      if (!r.input.trim()) {
+        auto[r.memberId] = '1';
+        inputs.push({ memberId: r.memberId, shares: ONE_SHARE });
+        continue;
+      }
+      const shares = parseShares(r.input);
+      if (shares === null) return { ok: false, message: 'Enter each person’s shares like 1, 2 or 0.5.', status: '', auto };
+      if (shares === 0) return { ok: false, message: 'Everyone on the bill needs some shares. Untick anyone who isn’t on it.', status: '', auto };
+      inputs.push({ memberId: r.memberId, shares });
+    }
+    const count = inputs.reduce((a, x) => a + x.shares, 0);
+    const shares = splitByShares(total, inputs);
+    const each = Math.round((total * ONE_SHARE) / count);
+    return {
+      ok: true,
+      shares: shares.map((x, i) => ({ ...x, shareInput: inputs[i].shares })),
+      status: `${sharesText(count)} ${count === ONE_SHARE ? 'share' : 'shares'} · about ${fmt(each)} a share`,
+      auto,
+    };
+  }
 
   if (mode === 'percent') {
     const values = new Map<string, number>();
@@ -145,12 +184,12 @@ export function computeSplit(mode: ManualMode, totalText: string, rows: SplitRow
     });
   }
   const assigned = [...values.values()].reduce((a, b) => a + b, 0);
-  const status = blank.length > 0 && left >= 0 ? `${formatCents(sum)} typed, the rest filled in` : `${formatCents(assigned)} of ${formatCents(total)}`;
+  const status = blank.length > 0 && left >= 0 ? `${fmt(sum)} typed, the rest filled in` : `${fmt(assigned)} of ${fmt(total)}`;
   if (assigned !== total) {
     const diff = total - assigned;
     return {
       ok: false,
-      message: diff > 0 ? `${formatCents(diff)} left to assign.` : `Over by ${formatCents(-diff)}.`,
+      message: diff > 0 ? `${fmt(diff)} left to assign.` : `Over by ${fmt(-diff)}.`,
       status,
       auto,
     };
@@ -160,6 +199,42 @@ export function computeSplit(mode: ManualMode, totalText: string, rows: SplitRow
     included.map((r) => ({ memberId: r.memberId, amountCents: values.get(r.memberId)! })),
   );
   return { ok: true, shares: shares.map((s) => ({ ...s, shareInput: s.amountCents })), status, auto };
+}
+
+/**
+ * A split typed in another currency, converted to the trip's: equal and
+ * percent splits are worked out again on the converted total (so equal stays
+ * equal), exact amounts are shared out in proportion. Shares always add up to
+ * the converted total.
+ */
+export function convertSplit(mode: ManualMode, shares: ComputedShare[], rate: number | string): ComputedShare[] {
+  const total = convertCents(
+    shares.reduce((s, x) => s + x.amountCents, 0),
+    rate,
+  );
+  if (mode === 'equal') {
+    return splitEqual(
+      total,
+      shares.map((s) => s.memberId),
+    ).map((s) => ({ ...s, shareInput: null }));
+  }
+  if (mode === 'percent') {
+    return splitByPercent(
+      total,
+      shares.map((s) => ({ memberId: s.memberId, basisPoints: s.shareInput ?? 0 })),
+    ).map((s, i) => ({ ...s, shareInput: shares[i].shareInput }));
+  }
+  if (mode === 'shares') {
+    return splitByShares(
+      total,
+      shares.map((s) => ({ memberId: s.memberId, shares: s.shareInput ?? ONE_SHARE })),
+    ).map((s, i) => ({ ...s, shareInput: shares[i].shareInput }));
+  }
+  const converted = convertShares(
+    shares.map((s) => s.amountCents),
+    rate,
+  );
+  return shares.map((s, i) => ({ memberId: s.memberId, amountCents: converted.shares[i], shareInput: converted.shares[i] }));
 }
 
 export function formatPercent(basisPoints: number): string {
@@ -173,6 +248,7 @@ export function shareInputText(mode: ManualMode, shareInput: number | null): str
   if (shareInput === null) return '';
   if (mode === 'percent') return formatPercent(shareInput).replace('%', '');
   if (mode === 'exact') return centsToText(shareInput);
+  if (mode === 'shares') return sharesText(shareInput);
   return '';
 }
 
