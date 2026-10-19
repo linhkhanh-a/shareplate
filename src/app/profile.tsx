@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
@@ -31,6 +32,14 @@ export default function ProfileScreen() {
 
       {profile.isError ? <Notice tone="error">{friendlyError(profile.error)}</Notice> : null}
       {profile.data ? <ProfileForm profile={profile.data} submitLabel="Save changes" /> : <Loading />}
+
+      <Divider />
+      <Section title="Help">
+        <ThemedText type="small" themeColor="textSecondary">
+          A quick tour, step-by-step guides and answers to common questions.
+        </ThemedText>
+        <Button label="Help and FAQ" variant="secondary" onPress={() => router.push('/help')} />
+      </Section>
 
       <Divider />
       <Section>
