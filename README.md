@@ -1,73 +1,115 @@
-# Shareplate
+<p align="center">
+  <img src="assets/images/icon.png" alt="Shareplate logo" width="96" />
+</p>
 
-Shareplate is a trip app for splitting bills
-fairly, down to the last cent: scan a receipt, say who had what, and see who owes
-whom in as few payments as possible. It also keeps the trip's day-by-day plan and
-budget in one place.
+<h1 align="center">Shareplate</h1>
 
-One codebase runs on **iPhone, iPad, and the web**.
+<p align="center">
+  <strong>Split trip bills fairly, down to the last cent, and plan the trip together.</strong><br />
+  Scan a receipt, say who had what, and see who owes whom in as few payments as possible.
+</p>
 
-## Status
+<p align="center">
+  <a href="https://shareplate-trips.vercel.app"><strong>Try it live → shareplate-trips.vercel.app</strong></a>
+</p>
 
-| Phase | What | Status |
-|---|---|---|
-| 0 | Project setup, database schema | ✅ Done |
-| 1 | Money engine (splitting math) | ✅ Done |
-| 2 | Sign in with Google, trips, members, guests | ✅ Done |
-| 3 | Add bills by hand, ledger, Settle Up | ✅ Done |
-| 4 | Real-time sync between phones | ✅ Done |
-| 5 | Receipt scanner | ✅ Done |
-| 6 | Itinerary planner and pinning bills | Done |
-| 7 | Budget dashboard | Done |
-| 8 | Quick-split mode, share card, spreadsheet export | Done |
-| 9 | Polish and launch | Next |
+<p align="center">
+  <img src="docs/screenshots/trip.png" alt="A trip's home page: what you're owed, Add bill, Settle up, and tabs for bills, plan, people, updates and settings" width="200" />
+  &nbsp;
+  <img src="docs/screenshots/by-shares.png" alt="A bill split by shares: 2 shares, 1, 1 and 0.5, adding up to the cent" width="200" />
+  &nbsp;
+  <img src="docs/screenshots/settle-up.png" alt="Settle up: the fewest payments, with each person's Zelle and Mark as paid" width="200" />
+  &nbsp;
+  <img src="docs/screenshots/plan.png" alt="Trip plan: activities by day with times, places and a planned budget" width="200" />
+</p>
 
-The full plan is in [docs/roadmap.md](docs/roadmap.md), and the reasoning behind
-each choice is in [docs/decisions.md](docs/decisions.md).
+---
 
-## How the money works
+## Why I built it
 
-All amounts are stored as whole cents, and every split always adds up to exactly
-the bill total. The rules, with a worked example, are in
-[docs/money-engine.md](docs/money-engine.md).
+On group trips, someone always ends up with a spreadsheet, a pile of receipts and
+a group chat full of "who paid for dinner?". Existing apps often round money
+loosely, limit what's free, or don't handle the real mess: one person
+had two drinks, the tip is split evenly but tax isn't, a bill was paid in euros,
+someone left the trip halfway. Shareplate handles those cases and keeps every
+balance exact to the cent.
+
+## What it does
+
+| | |
+|---|---|
+| **Receipt scanner** | Take a photo and the items, prices, tax and tip are read automatically. Check them in a step-by-step flow with the photo always beside you, then tap who had each item. |
+| **Any way to split** | Equally, by percent, by exact amounts, by shares (2 for a couple, 0.5 for a child) or item by item. Leave someone blank and they get what's left. |
+| **Any currency** | Pay in yen, francs or dong. The day's exchange rate (European Central Bank) fills in, and everyone's share is converted to the trip's currency. |
+| **Fewest payments** | Settle up works out the smallest set of payments that clears every balance, and shows where to send money. |
+| **Live for everyone** | Friends join with an invite link and see bills, balances and changes in real time. Guests without an account are supported too. |
+| **Trip plan and budget** | Day-by-day activities with times and places (free OpenStreetMap search), a trip budget and spending by day. |
+| **Share and export** | A summary card for the group chat, a personal message for each person, and an Excel or CSV export. |
+| **Safe changes** | Before deleting or editing a bill, you see whose balance changes. People who leave are kept at exactly $0.00. |
+| **Built-in help** | A picture tour for new users, a Getting started checklist, guides, an FAQ, What's new and a feedback form. |
+
+<p align="center">
+  <img src="docs/screenshots/tour.png" alt="The first-run picture tour" width="200" />
+  &nbsp;
+  <img src="docs/screenshots/add-bill.png" alt="Add a bill: upload a receipt, one total, or by item" width="200" />
+  &nbsp;
+  <img src="docs/screenshots/currency.png" alt="A bill paid in euros with the day's exchange rate" width="200" />
+  &nbsp;
+  <img src="docs/screenshots/share.png" alt="Share and export: the trip summary card" width="200" />
+</p>
+
+## Engineering highlights
+
+- **Exact money.** Every amount is an integer number of cents, never a float.
+  Splits use the largest-remainder method, so shares always add up to the bill
+  total and nobody is off by more than one cent. Currency conversion uses
+  BigInt arithmetic. The rules are written up in
+  [docs/money-engine.md](docs/money-engine.md).
+- **The database enforces the rules, not just the app.** Postgres row-level
+  security decides who sees what; transaction-level constraint triggers check
+  that every bill's shares add up, that percentages total 100%, and that people
+  who left the trip stay at $0.00.
+- **Serverless functions** for reading receipts (Gemini vision), exchange rates
+  and place search, with sign-in checks and no secrets in the app.
+- **Tested end to end.** About 290 automated tests, including property-based
+  tests of the money engine and the full database schema running in an
+  in-memory Postgres. Every feature is also walked through in a real browser before release.
+- **Shipped like a product.** Every change goes through a pull request with
+  CI (typecheck, lint, tests), a preview deploy, and automatic database
+  migrations on merge. 67 written design decisions are in
+  [docs/decisions.md](docs/decisions.md).
+- **Accessible.** Screen-reader labels, keyboard support and light and dark mode
+  throughout.
 
 ## Tech stack
 
-- **App:** [Expo](https://expo.dev) (React Native) + Expo Router + TypeScript, built for iOS, tablet and web
-- **Backend:** [Supabase](https://supabase.com) — Postgres, Google sign-in, real-time updates, file storage
-- **Tests:** Vitest with property-based tests (fast-check); the database schema is tested in an in-memory Postgres (PGlite)
+- **App:** React Native with [Expo](https://expo.dev) and Expo Router, TypeScript, TanStack Query. The web today, with iPhone and Android from the same code.
+- **Backend:** [Supabase](https://supabase.com): Postgres, Google sign-in, real-time updates, file storage and Edge Functions (Deno).
+- **Hosting and CI:** Vercel and GitHub Actions.
+- **Tests:** Vitest, fast-check (property-based tests) and PGlite (Postgres in memory).
 
 ## Project layout
 
 ```
 src/app/          screens (every file is a route)
 src/money/        the money engine: pure TypeScript, no UI, fully tested
-src/lib/          sign-in, database queries, error messages
-src/components/   shared building blocks (buttons, fields, rows)
-supabase/         database migrations, schema tests, and the receipt reader (functions/)
-docs/             roadmap, decisions, money rules
+src/lib/          queries, sign-in, help content, export
+src/components/   shared building blocks
+supabase/         migrations, schema tests and Edge Functions
+docs/             roadmap, design decisions, money rules
 ```
 
-## Running it locally
+## Status
 
-You need [Node.js 22](https://nodejs.org).
+The website is live. An iPhone app is next on the
+[roadmap](docs/roadmap.md).
 
-```bash
-npm install
-npm run web        # open the app in your browser
-npm test           # run all tests
-npm run check      # typecheck + lint + tests (what CI runs)
-```
+## License
 
-## Deploying
-
-- **Database and receipt reader:** new files in `supabase/migrations/` and
-  `supabase/functions/` are deployed to the live Supabase project automatically
-  when they're merged to `main` (`.github/workflows/deploy-database.yml`).
-  The reader needs a `GEMINI_API_KEY` secret in Supabase (Edge Functions → Secrets).
-- **Website:** Vercel builds every pull request as a preview and `main` as the
-  live site.
+Copyright © 2026 Linh Bui. **All rights reserved.** The code is public so it can
+be reviewed. It is not open source, and it may not be copied, reused or hosted
+without written permission. See [LICENSE](LICENSE).
 
 ## Author
 
-Built by Linh Bui.
+Designed and built by **Linh Bui** ([@linhkhanh-a](https://github.com/linhkhanh-a)).

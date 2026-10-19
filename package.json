@@ -62,5 +62,6 @@
     "build:web": "expo export --platform web",
     "check": "npm run typecheck && npm run lint && npm test"
   },
-  "private": true
+  "private": true,
+  "license": "UNLICENSED"
 }
